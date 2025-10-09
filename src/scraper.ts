@@ -1,0 +1,225 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { FuelStationData, ScrapedData } from './types';
+
+async function scrapeWithFetch(): Promise<void> {
+  try {
+    console.log('Iniciando scraper con fetch...');
+    
+    const url = 'http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134';
+    
+    console.log('Obteniendo datos de la página...');
+    
+    // Configurar headers para simular un navegador real
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    };
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: headers,
+      redirect: 'follow'
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const html = await response.text();
+    console.log('HTML obtenido exitosamente');
+    
+    // Extraer datos del HTML
+    const scrapedData = extractDataFromHTML(html);
+    
+    // Mostrar resultados en consola
+    displayResults(scrapedData);
+    
+    // Guardar en archivo JSON
+    await saveToFile(scrapedData);
+    
+    console.log('Scraping completado exitosamente!');
+    
+  } catch (error) {
+    console.error('Error durante el scraping:', error);
+    throw error;
+  }
+}
+
+/**
+ * Extrae datos del HTML usando regex y parsing manual
+ */
+function extractDataFromHTML(html: string): ScrapedData {
+  const stations: FuelStationData[] = [];
+  
+  // Buscar información general
+  const titleMatch = html.match(/<h[4-6][^>]*>([^<]+)<\/h[4-6]>/i);
+  const measurementMatch = html.match(/Última medición\s+([^<\n]+)/i);
+  
+  // Buscar arrays PHP en el HTML
+  const phpArrayRegex = /array\(\d+\)\s*\{\s*\["id"\]=>\s*int\((\d+)\)\s*\["un"\]=>\s*int\((\d+)\)\s*\["producto_id"\]=>\s*int\((\d+)\)\s*\["fecha"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\["saldo"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\}/g;
+  
+  let match;
+  while ((match = phpArrayRegex.exec(html)) !== null) {
+    const id = parseInt(match[1]);
+    const un = parseInt(match[2]);
+    const producto_id = parseInt(match[3]);
+    const fecha = match[4];
+    const saldo = match[5];
+    
+    // Buscar información adicional alrededor del array PHP
+    const contextStart = Math.max(0, match.index - 2000);
+    const contextEnd = Math.min(html.length, match.index + 2000);
+    const context = html.substring(contextStart, contextEnd);
+    
+    // Extraer nombre de la estación
+    const nameMatch = context.match(/(EQUIPETROL|LA TECA|LUCYFER|PARAPETI|SUR CENTRAL|BIPETROL|YACUIBA|SANTA CRUZ|COCHABAMBA|LA PAZ|ORURO|POTOSI|SUCRE|TARIJA|BENI|PANDO)/i);
+    const stationName = nameMatch ? nameMatch[1].toUpperCase() : `Estación ${id}`;
+    
+    // Extraer volumen disponible
+    const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
+    const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
+    
+    // Extraer cantidad de vehículos
+    const vehiclesMatch = context.match(/(\d+)\s*vehículos?/i);
+    const vehicles = vehiclesMatch ? parseInt(vehiclesMatch[1]) : Math.round(volume / 40);
+    
+    // Extraer tiempo de espera
+    const timeMatch = context.match(/(\d+(?:\.\d+)?)\s*minutos?/i);
+    const waitTime = timeMatch ? parseFloat(timeMatch[1]) : 2;
+    
+    // Extraer dirección - buscar patrones más específicos
+    let address = 'Dirección no disponible';
+    
+    // Buscar direcciones conocidas
+    const knownAddresses = [
+      'V. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK',
+      'CARRETERA A COTOCA, ANTES DE LA TRANCA',
+      'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE',
+      'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS',
+      'AV. SANTOS DUMONT, 2DO ANILLO'
+    ];
+    
+    for (const knownAddr of knownAddresses) {
+      if (context.includes(knownAddr)) {
+        address = knownAddr;
+        break;
+      }
+    }
+    
+    // Si no se encuentra dirección conocida, buscar patrones generales
+    if (address === 'Dirección no disponible') {
+      const addressMatch = context.match(/([A-Z][A-Z\s\-,\.0-9]{15,80})/);
+      if (addressMatch && !addressMatch[1].includes('Custom') && !addressMatch[1].includes('LargeModal')) {
+        address = addressMatch[1].trim();
+      }
+    }
+    
+    // Calcular mangueras basado en el tiempo de espera
+    const mangueras = Math.max(1, Math.round(12 / waitTime));
+    
+    stations.push({
+      id,
+      un,
+      producto_id,
+      fecha,
+      saldo,
+      nombre_estacion: stationName,
+      volumen_disponible: volume,
+      cantidad_vehiculos: vehicles,
+      tiempo_espera_minutos: waitTime,
+      direccion: address,
+      tipo_combustible: 'G',
+      tiempo_carga: 12,
+      mangueras,
+      carga_promedio: 40,
+      tiempo_carga_por_manguera: waitTime
+    });
+  }
+  
+  return {
+    timestamp: new Date().toISOString(),
+    ultima_medicion: measurementMatch ? measurementMatch[1].trim() : 'No disponible',
+    tipo_combustible: 'GASOLINA ESPECIAL',
+    estaciones: stations
+  };
+}
+
+/**
+ * Muestra los resultados en la consola
+ */
+function displayResults(data: ScrapedData): void {
+  console.log('\n' + '='.repeat(80));
+  console.log(`${data.tipo_combustible}`);
+  console.log(`Última medición: ${data.ultima_medicion}`);
+  console.log(`Timestamp: ${data.timestamp}`);
+  console.log('='.repeat(80));
+  
+  if (data.estaciones.length === 0) {
+    console.log('No se encontraron estaciones con datos válidos');
+    return;
+  }
+  
+  data.estaciones.forEach((station, index) => {
+    console.log(`\n${index + 1}. ${station.nombre_estacion}`);
+    console.log(`   📍 ID: ${station.id} | Unidad: ${station.un}`);
+    console.log(`   ⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts.`);
+    console.log(`   🚗 Vehículos: ${station.cantidad_vehiculos}`);
+    console.log(`   ⏱️  Tiempo espera: ${station.tiempo_espera_minutos} min.`);
+    console.log(`   📍 Dirección: ${station.direccion}`);
+    console.log(`   📅 Fecha: ${station.fecha}`);
+    console.log(`   🔢 Saldo: ${station.saldo}`);
+  });
+  
+  console.log('\n' + '='.repeat(80));
+  console.log(`Total de estaciones encontradas: ${data.estaciones.length}`);
+  console.log('='.repeat(80));
+}
+
+/**
+ * Guarda los datos en un archivo JSON
+ */
+async function saveToFile(data: ScrapedData): Promise<void> {
+  const outputDir = path.join(process.cwd(), 'output');
+  
+  // Crear directorio si no existe
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+  
+  const filename = `fuel-data-${new Date().toISOString().split('T')[0]}.json`;
+  const filepath = path.join(outputDir, filename);
+  
+  try {
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`Datos guardados en: ${filepath}`);
+  } catch (error) {
+    console.error('Error guardando archivo:', error);
+    throw error;
+  }
+}
+
+/**
+ * Función principal de ejecución
+ */
+async function main(): Promise<void> {
+  try {
+    await scrapeWithFetch();
+  } catch (error) {
+    console.error('Error fatal:', error);
+    process.exit(1);
+  }
+}
+
+// Ejecutar si es llamado directamente
+if (require.main === module) {
+  main();
+}
+
+export { scrapeWithFetch, extractDataFromHTML, displayResults, saveToFile };
