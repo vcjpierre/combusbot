@@ -34,7 +34,6 @@ logs/
 
 # Output files
 output/
-*.json
 
 # Temporary files
 tmp/

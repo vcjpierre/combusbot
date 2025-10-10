@@ -1,0 +1,42 @@
+{
+  "name": "fuel-scraper",
+  "version": "1.0.0",
+  "description": "Web scraper para extraer saldos de combustible de estaciones de servicio",
+  "main": "dist/production-bot.js",
+  "scripts": {
+    "build": "tsc",
+    "scrape": "npm run build && node dist/scraper.js",
+    "bot": "npm run build && node dist/telegram-bot.js",
+    "bot-webhook": "npm run build && node dist/telegram-bot-webhook.js",
+    "bot-production": "npm run build && node dist/production-bot.js",
+    "test-bot": "npm run build && node dist/test-bot.js",
+    "check-instances": "npm run build && node dist/check-instances.js",
+    "debug-scraper": "npm run build && node dist/debug-scraper.js",
+    "verify-real-data": "npm run build && node dist/verify-real-data.js",
+    "dev": "ts-node src/scraper.ts",
+    "dev-bot": "ts-node src/telegram-bot.ts",
+    "dev-bot-webhook": "ts-node src/telegram-bot-webhook.ts",
+    "dev-bot-production": "ts-node src/production-bot.ts",
+    "clean": "rimraf dist"
+  },
+  "keywords": ["scraper", "fuel", "combustible", "puppeteer"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^24.23.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/node-telegram-bot-api": "^0.64.0",
+    "@types/node-cron": "^3.0.11",
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.0",
+    "rimraf": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
