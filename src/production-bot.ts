@@ -1,7 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
-import { scrapeWithFetch, extractDataFromHTML } from './scraper';
 import { ScrapedData, FuelStationData } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,16 +16,20 @@ interface BotConfig {
   minVolumeThreshold: number;
 }
 
-class FuelScraperBotWebhook {
+class ProductionFuelScraperBot {
   private bot: TelegramBot;
   private config: BotConfig;
   private lastData: ScrapedData | null = null;
   private isRunning: boolean = false;
+  private startTime: Date = new Date();
 
   constructor() {
     this.config = this.loadConfig();
-    this.bot = new TelegramBot(this.config.token, { polling: false });
+    this.bot = new TelegramBot(this.config.token, { 
+      polling: false
+    });
     this.setupBot();
+    this.setupErrorHandling();
   }
 
   private loadConfig(): BotConfig {
@@ -46,8 +49,93 @@ class FuelScraperBotWebhook {
     };
   }
 
+  private setupErrorHandling(): void {
+    // Manejo de errores no capturados
+    process.on('unhandledRejection', (reason, promise) => {
+      this.log('error', 'Unhandled Rejection', { reason, promise });
+    });
+
+    process.on('uncaughtException', (error) => {
+      this.log('error', 'Uncaught Exception', { error: error.message });
+      process.exit(1);
+    });
+
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+      this.log('info', 'Received SIGINT, shutting down gracefully');
+      this.stop();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      this.log('info', 'Received SIGTERM, shutting down gracefully');
+      this.stop();
+      process.exit(0);
+    });
+
+    // Manejo de errores específicos de Telegram
+    this.bot.on('error', (error: any) => {
+      this.log('error', 'Error de Telegram Bot', { 
+        error: error.message,
+        code: error.code 
+      });
+      
+      // Si es un error de conflicto, esperar y reintentar
+      if (error.code === 'ETELEGRAM' && error.response?.statusCode === 409) {
+        this.log('warn', 'Conflicto detectado - múltiples instancias del bot', { 
+          message: 'Esperando 30 segundos antes de continuar...' 
+        });
+        setTimeout(() => {
+          this.log('info', 'Reintentando conexión después del conflicto...');
+        }, 30000);
+      }
+    });
+
+    this.bot.on('polling_error', (error: any) => {
+      this.log('error', 'Error de polling de Telegram', { 
+        error: error.message,
+        code: error.code 
+      });
+      
+      // Manejar errores de red específicos
+      if (error.code === 'EFATAL' || error.code === 'ENOTFOUND') {
+        this.log('warn', 'Error de red detectado, reintentando en 10 segundos...');
+        setTimeout(() => {
+          this.log('info', 'Reintentando conexión después del error de red...');
+        }, 10000);
+      }
+    });
+  }
+
+  private log(level: string, message: string, data?: any): void {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      level,
+      message,
+      data,
+      uptime: process.uptime()
+    };
+    
+    console.log(JSON.stringify(logEntry));
+    
+    // En producción, también podrías enviar logs a un servicio externo
+    if (level === 'error' && process.env.NODE_ENV === 'production') {
+      this.sendErrorNotification(message, data);
+    }
+  }
+
+  private async sendErrorNotification(message: string, data?: any): Promise<void> {
+    try {
+      const errorMessage = `🚨 *Error en Bot de Combustible*\n\n${message}\n\nDatos: ${JSON.stringify(data, null, 2)}`;
+      await this.bot.sendMessage(this.config.chatId, errorMessage, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Error enviando notificación de error:', error);
+    }
+  }
+
   private setupBot(): void {
-    console.log('🤖 Iniciando bot de Telegram (modo webhook)...');
+    this.log('info', 'Iniciando bot de Telegram (modo producción)...');
 
     // Comando /start
     this.bot.onText(/\/start/, (msg) => {
@@ -62,12 +150,14 @@ class FuelScraperBotWebhook {
 /status - Ver estado del bot
 /scrape - Ejecutar scraping manual
 /schedule - Ver configuración del scheduler
+/health - Verificar salud del sistema
 /help - Mostrar ayuda
 
 *Configuración actual:*
 • Notificaciones: ${this.config.notifyOnlyChanges ? 'Solo cambios' : 'Cada hora'}
 • Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
 • Horario: ${this.config.cronSchedule}
+• Uptime: ${this.getUptime()}
 
 El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! 🎉
       `;
@@ -85,10 +175,28 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 • Scheduler: ${this.isRunning ? '🟢 Ejecutándose' : '🔴 Detenido'}
 • Última ejecución: ${this.lastData ? new Date(this.lastData.timestamp).toLocaleString('es-ES') : 'Nunca'}
 • Estaciones monitoreadas: ${this.lastData ? this.lastData.estaciones.length : 0}
+• Uptime: ${this.getUptime()}
+• Memoria: ${this.getMemoryUsage()}
 • Próxima ejecución: ${this.getNextExecutionTime()}
       `;
       
       this.bot.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });
+    });
+
+    // Comando /health
+    this.bot.onText(/\/health/, (msg) => {
+      const chatId = msg.chat.id;
+      const healthMessage = `
+🏥 *Health Check*
+
+• Estado: ✅ Saludable
+• Uptime: ${this.getUptime()}
+• Memoria: ${this.getMemoryUsage()}
+• Última ejecución: ${this.lastData ? new Date(this.lastData.timestamp).toLocaleString('es-ES') : 'Nunca'}
+• Timestamp: ${new Date().toISOString()}
+      `;
+      
+      this.bot.sendMessage(chatId, healthMessage, { parse_mode: 'Markdown' });
     });
 
     // Comando /scrape
@@ -99,8 +207,9 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       try {
         await this.executeScraping();
         this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
-      } catch (error) {
-        this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+      } catch (error: any) {
+        this.log('error', 'Error en scraping manual', { error: error.message });
+        this.bot.sendMessage(chatId, `❌ Error en scraping: ${error.message}`);
       }
     });
 
@@ -114,6 +223,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 • Descripción: ${this.getCronDescription()}
 • Notificar solo cambios: ${this.config.notifyOnlyChanges ? 'Sí' : 'No'}
 • Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
+• Uptime: ${this.getUptime()}
 
 *Formato cron:* minuto hora día mes día_semana
 • \`0 * * * *\` = Cada hora
@@ -133,6 +243,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 *Comandos:*
 /start - Mensaje de bienvenida
 /status - Estado actual del bot
+/health - Verificar salud del sistema
 /scrape - Ejecutar scraping manual
 /schedule - Ver configuración del scheduler
 /help - Esta ayuda
@@ -142,6 +253,8 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 • Notificaciones de cambios importantes
 • Datos en tiempo real de estaciones Biopetrol
 • Alertas de bajo inventario
+• Logging estructurado
+• Manejo robusto de errores
 
 *Contacto:* Si tienes problemas, contacta al administrador.
       `;
@@ -149,22 +262,23 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
     });
 
-    console.log('✅ Bot configurado correctamente (modo webhook)');
+    this.log('info', 'Bot configurado correctamente');
   }
 
   public startScheduler(): void {
-    console.log(`⏰ Iniciando scheduler con horario: ${this.config.cronSchedule}`);
+    this.log('info', `Iniciando scheduler con horario: ${this.config.cronSchedule}`);
     
     cron.schedule(this.config.cronSchedule, async () => {
-      console.log('🔄 Ejecutando scraping programado...');
+      this.log('info', 'Ejecutando scraping programado...');
       try {
         await this.executeScraping();
-      } catch (error) {
-        console.error('Error en scraping programado:', error);
+        this.log('info', 'Scraping programado completado exitosamente');
+      } catch (error: any) {
+        this.log('error', 'Error en scraping programado', { error: error.message });
         try {
-          await this.bot.sendMessage(this.config.chatId, `❌ Error en scraping automático: ${error}`);
-        } catch (botError) {
-          console.error('Error enviando mensaje de error:', botError);
+          await this.bot.sendMessage(this.config.chatId, `❌ Error en scraping automático: ${error.message}`);
+        } catch (botError: any) {
+          this.log('error', 'Error enviando mensaje de error', { error: botError.message });
         }
       }
     }, {
@@ -173,10 +287,12 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     });
 
     this.isRunning = true;
-    console.log('✅ Scheduler iniciado correctamente');
+    this.log('info', 'Scheduler iniciado correctamente');
   }
 
   private async executeScraping(): Promise<void> {
+    const startTime = Date.now();
+    
     try {
       // Ejecutar scraping
       const url = process.env.SCRAPER_URL || 'http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134';
@@ -214,8 +330,19 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       this.lastData = currentData;
       await this.saveData(currentData);
       
-    } catch (error) {
-      console.error('Error en scraping:', error);
+      const duration = Date.now() - startTime;
+      this.log('info', 'Scraping completado', { 
+        duration: `${duration}ms`,
+        stations: currentData.estaciones.length,
+        notified: this.shouldNotify(currentData)
+      });
+      
+    } catch (error: any) {
+      const duration = Date.now() - startTime;
+      this.log('error', 'Error en scraping', { 
+        error: error.message,
+        duration: `${duration}ms`
+      });
       throw error;
     }
   }
@@ -258,9 +385,9 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         parse_mode: 'Markdown',
         disable_web_page_preview: true
       });
-      console.log('📤 Notificación enviada exitosamente');
-    } catch (error) {
-      console.error('Error enviando notificación:', error);
+      this.log('info', 'Notificación enviada exitosamente');
+    } catch (error: any) {
+      this.log('error', 'Error enviando notificación', { error: error.message });
     }
   }
 
@@ -303,36 +430,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     }
     
     return message;
-  }
-
-  private async saveData(data: ScrapedData): Promise<void> {
-    const outputDir = path.join(process.cwd(), 'output');
-    
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    
-    const filename = `fuel-data-${new Date().toISOString().split('T')[0]}.json`;
-    const filepath = path.join(outputDir, filename);
-    
-    try {
-      fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8');
-      console.log(`💾 Datos guardados en: ${filepath}`);
-    } catch (error) {
-      console.error('Error guardando archivo:', error);
-    }
-  }
-
-  private getCronDescription(): string {
-    const schedule = this.config.cronSchedule;
-    
-    if (schedule === '0 * * * *') return 'Cada hora';
-    if (schedule === '0 */2 * * *') return 'Cada 2 horas';
-    if (schedule === '0 */6 * * *') return 'Cada 6 horas';
-    if (schedule === '0 8,12,16,20 * * *') return '4 veces al día (8am, 12pm, 4pm, 8pm)';
-    if (schedule === '0 0 * * *') return 'Una vez al día (medianoche)';
-    
-    return 'Horario personalizado';
   }
 
   private extractDataFromHTML(html: string): ScrapedData {
@@ -386,13 +483,47 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
       const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
       
-      // Extraer cantidad de vehículos
-      const vehiclesMatch = context.match(/(\d+)\s*vehículos?/i);
-      const vehicles = vehiclesMatch ? parseInt(vehiclesMatch[1]) : Math.round(volume / 40);
+      // Extraer cantidad de vehículos - SOLO del HTML, sin cálculos
+      let vehicles = 0; // Valor por defecto si no se encuentra
       
-      // Extraer tiempo de espera
-      const timeMatch = context.match(/(\d+(?:\.\d+)?)\s*minutos?/i);
-      const waitTime = timeMatch ? parseFloat(timeMatch[1]) : 2;
+      // Buscar diferentes patrones de vehículos en el HTML
+      const vehiclesPatterns = [
+        /(\d+)\s*vehículos?/i,
+        /vehículos?[:\s]*(\d+)/i,
+        /veh[:\s]*(\d+)/i,
+        /(\d+)\s*veh/i
+      ];
+      
+      for (const pattern of vehiclesPatterns) {
+        const match = context.match(pattern);
+        if (match) {
+          vehicles = parseInt(match[1]);
+          break;
+        }
+      }
+      
+      // Si no se encuentra en el HTML, usar 0 en lugar de calcular
+      if (vehicles === 0) {
+        vehicles = 0; // Mantener 0 si no se encuentra en la página
+      }
+      
+      // Extraer tiempo de espera - buscar patrones más específicos
+      let waitTime = 2; // Valor por defecto
+      
+      const timePatterns = [
+        /(\d+(?:\.\d+)?)\s*minutos?\s*aprox\.?/i,
+        /tiempo[:\s]*(\d+(?:\.\d+)?)\s*min/i,
+        /espera[:\s]*(\d+(?:\.\d+)?)\s*min/i,
+        /(\d+(?:\.\d+)?)\s*min\s*espera/i
+      ];
+      
+      for (const pattern of timePatterns) {
+        const match = context.match(pattern);
+        if (match) {
+          waitTime = parseFloat(match[1]);
+          break;
+        }
+      }
       
       // Calcular mangueras basado en el tiempo de espera
       const mangueras = Math.max(1, Math.round(12 / waitTime));
@@ -424,22 +555,70 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     };
   }
 
+  private async saveData(data: ScrapedData): Promise<void> {
+    const outputDir = path.join(process.cwd(), 'output');
+    
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    const filename = `fuel-data-${new Date().toISOString().split('T')[0]}.json`;
+    const filepath = path.join(outputDir, filename);
+    
+    try {
+      fs.writeFileSync(filepath, JSON.stringify(data, null, 2), 'utf8');
+      this.log('info', 'Datos guardados exitosamente', { filepath });
+    } catch (error: any) {
+      this.log('error', 'Error guardando archivo', { error: error.message });
+    }
+  }
+
+  private getCronDescription(): string {
+    const schedule = this.config.cronSchedule;
+    
+    if (schedule === '0 * * * *') return 'Cada hora';
+    if (schedule === '0 */2 * * *') return 'Cada 2 horas';
+    if (schedule === '0 */6 * * *') return 'Cada 6 horas';
+    if (schedule === '0 8,12,16,20 * * *') return '4 veces al día (8am, 12pm, 4pm, 8pm)';
+    if (schedule === '0 0 * * *') return 'Una vez al día (medianoche)';
+    
+    return 'Horario personalizado';
+  }
+
   private getNextExecutionTime(): string {
     return 'Próxima hora';
   }
 
+  private getUptime(): string {
+    const uptime = process.uptime();
+    const days = Math.floor(uptime / 86400);
+    const hours = Math.floor((uptime % 86400) / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  }
+
+  private getMemoryUsage(): string {
+    const used = process.memoryUsage();
+    return `${Math.round(used.heapUsed / 1024 / 1024)}MB`;
+  }
+
   public stop(): void {
     this.isRunning = false;
-    console.log('🛑 Bot detenido');
+    this.log('info', 'Bot detenido');
   }
 }
 
 // Función principal
 async function main(): Promise<void> {
   try {
-    console.log('🚀 Iniciando Bot de Saldos de Combustible (modo webhook)...');
-    
-    const bot = new FuelScraperBotWebhook();
+    const bot = new ProductionFuelScraperBot();
     bot.startScheduler();
     
     // Enviar mensaje de inicio
@@ -451,6 +630,7 @@ El bot está ahora activo y monitoreando los saldos de combustible.
 • Scheduler: ✅ Activo
 • Notificaciones: ${process.env.NOTIFY_ONLY_CHANGES === 'true' ? 'Solo cambios' : 'Cada hora'}
 • Volumen mínimo: ${process.env.MIN_VOLUME_THRESHOLD || '1000'} Lts.
+• Entorno: ${process.env.NODE_ENV || 'development'}
 
 Usa /help para ver todos los comandos disponibles.
     `;
@@ -464,19 +644,6 @@ Usa /help para ver todos los comandos disponibles.
       }
     }
     
-    // Manejar cierre graceful
-    process.on('SIGINT', () => {
-      console.log('\n🛑 Cerrando bot...');
-      bot.stop();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', () => {
-      console.log('\n🛑 Cerrando bot...');
-      bot.stop();
-      process.exit(0);
-    });
-    
   } catch (error) {
     console.error('💥 Error fatal:', error);
     process.exit(1);
@@ -488,4 +655,4 @@ if (require.main === module) {
   main();
 }
 
-export { FuelScraperBotWebhook };
+export { ProductionFuelScraperBot };

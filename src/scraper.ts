@@ -62,6 +62,27 @@ function extractDataFromHTML(html: string): ScrapedData {
   const titleMatch = html.match(/<h[4-6][^>]*>([^<]+)<\/h[4-6]>/i);
   const measurementMatch = html.match(/Última medición\s+([^<\n]+)/i);
   
+  // Mapeo de IDs conocidos a nombres y direcciones
+  const stationMapping: { [key: number]: { name: string; address: string } } = {
+    5850023: { name: 'CABEZAS', address: 'CARRETERA A CAMIRI LOCALIDAD CABEZAS - AV. ELOY ALPIRE' },
+    5850011: { name: 'LA TECA', address: 'CARRETERA A COTOCA, ANTES DE LA TRANCA' },
+    5849989: { name: 'LUCYFER', address: 'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE' },
+    5850027: { name: 'PARAPETI', address: 'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS' },
+    5849996: { name: 'SUR CENTRAL', address: 'AV. SANTOS DUMONT, 2DO ANILLO' },
+    5849969: { name: 'ALEMANA', address: 'AV. ALEMANA, 2DO ANILLO' },
+    5849999: { name: 'BENI', address: 'AV. BENI, 2DO ANILLO' },
+    5850030: { name: 'BEREA', address: 'DOBLE VIA LA GUARDIA KM 8' },
+    5849992: { name: 'MONTECRISTO', address: 'AV. MONTECRISTO, 2DO ANILLO' },
+    5849980: { name: 'EQUIPETROL', address: 'AV. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK' },
+    5850035: { name: 'GASCO', address: 'AV. BANZER 3ER ANILLO' },
+    5849985: { name: 'PARAGUA', address: 'AV. PARAGUA, 4TO ANILLO' },
+    5850020: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
+    5849977: { name: 'ROYAL', address: 'AV. ROQUE AGUILERA ESQ CALLE ANGEL SANDOVAL NRO 3897 ZONA VILLA FATIMA' },
+    5850007: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
+    5850003: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
+    5849972: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
+  };
+  
   // Buscar arrays PHP en el HTML
   const phpArrayRegex = /array\(\d+\)\s*\{\s*\["id"\]=>\s*int\((\d+)\)\s*\["un"\]=>\s*int\((\d+)\)\s*\["producto_id"\]=>\s*int\((\d+)\)\s*\["fecha"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\["saldo"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\}/g;
   
@@ -74,50 +95,68 @@ function extractDataFromHTML(html: string): ScrapedData {
     const saldo = match[5];
     
     // Buscar información adicional alrededor del array PHP
-    const contextStart = Math.max(0, match.index - 2000);
-    const contextEnd = Math.min(html.length, match.index + 2000);
+    const contextStart = Math.max(0, match.index - 3000);
+    const contextEnd = Math.min(html.length, match.index + 3000);
     const context = html.substring(contextStart, contextEnd);
     
-    // Extraer nombre de la estación
-    const nameMatch = context.match(/(EQUIPETROL|LA TECA|LUCYFER|PARAPETI|SUR CENTRAL|BIPETROL|YACUIBA|SANTA CRUZ|COCHABAMBA|LA PAZ|ORURO|POTOSI|SUCRE|TARIJA|BENI|PANDO)/i);
-    const stationName = nameMatch ? nameMatch[1].toUpperCase() : `Estación ${id}`;
+    // Usar mapeo conocido o extraer del contexto
+    let stationName = `Estación ${id}`;
+    let address = 'Dirección no disponible';
     
-    // Extraer volumen disponible
+    if (stationMapping[id]) {
+      stationName = stationMapping[id].name;
+      address = stationMapping[id].address;
+    } else {
+      // Fallback: buscar en el contexto
+      const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|PARAGUA|ROYAL|VIRU VIRU)/i);
+      if (nameMatch) {
+        stationName = nameMatch[1].toUpperCase();
+      }
+    }
+    
+    // Extraer volumen disponible - buscar en el contexto más amplio
     const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
     const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
     
-    // Extraer cantidad de vehículos
-    const vehiclesMatch = context.match(/(\d+)\s*vehículos?/i);
-    const vehicles = vehiclesMatch ? parseInt(vehiclesMatch[1]) : Math.round(volume / 40);
+    // Extraer cantidad de vehículos - SOLO del HTML, sin cálculos
+    let vehicles = 0; // Valor por defecto si no se encuentra
     
-    // Extraer tiempo de espera
-    const timeMatch = context.match(/(\d+(?:\.\d+)?)\s*minutos?/i);
-    const waitTime = timeMatch ? parseFloat(timeMatch[1]) : 2;
-    
-    // Extraer dirección - buscar patrones más específicos
-    let address = 'Dirección no disponible';
-    
-    // Buscar direcciones conocidas
-    const knownAddresses = [
-      'V. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK',
-      'CARRETERA A COTOCA, ANTES DE LA TRANCA',
-      'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE',
-      'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS',
-      'AV. SANTOS DUMONT, 2DO ANILLO'
+    // Buscar diferentes patrones de vehículos en el HTML
+    const vehiclesPatterns = [
+      /(\d+)\s*vehículos?/i,
+      /vehículos?[:\s]*(\d+)/i,
+      /veh[:\s]*(\d+)/i,
+      /(\d+)\s*veh/i
     ];
     
-    for (const knownAddr of knownAddresses) {
-      if (context.includes(knownAddr)) {
-        address = knownAddr;
+    for (const pattern of vehiclesPatterns) {
+      const match = context.match(pattern);
+      if (match) {
+        vehicles = parseInt(match[1]);
         break;
       }
     }
     
-    // Si no se encuentra dirección conocida, buscar patrones generales
-    if (address === 'Dirección no disponible') {
-      const addressMatch = context.match(/([A-Z][A-Z\s\-,\.0-9]{15,80})/);
-      if (addressMatch && !addressMatch[1].includes('Custom') && !addressMatch[1].includes('LargeModal')) {
-        address = addressMatch[1].trim();
+    // Si no se encuentra en el HTML, usar 0 en lugar de calcular
+    if (vehicles === 0) {
+      vehicles = 0; // Mantener 0 si no se encuentra en la página
+    }
+    
+    // Extraer tiempo de espera - buscar patrones más específicos
+    let waitTime = 2; // Valor por defecto
+    
+    const timePatterns = [
+      /(\d+(?:\.\d+)?)\s*minutos?\s*aprox\.?/i,
+      /tiempo[:\s]*(\d+(?:\.\d+)?)\s*min/i,
+      /espera[:\s]*(\d+(?:\.\d+)?)\s*min/i,
+      /(\d+(?:\.\d+)?)\s*min\s*espera/i
+    ];
+    
+    for (const pattern of timePatterns) {
+      const match = context.match(pattern);
+      if (match) {
+        waitTime = parseFloat(match[1]);
+        break;
       }
     }
     
