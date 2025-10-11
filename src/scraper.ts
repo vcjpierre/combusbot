@@ -81,6 +81,7 @@ function extractDataFromHTML(html: string): ScrapedData {
     5850007: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
     5850003: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
     5849972: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
+    5850016: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
   };
   
   // Buscar arrays PHP en el HTML
@@ -108,7 +109,7 @@ function extractDataFromHTML(html: string): ScrapedData {
       address = stationMapping[id].address;
     } else {
       // Fallback: buscar en el contexto
-      const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|PARAGUA|ROYAL|VIRU VIRU)/i);
+      const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|MONTEVERDE|PARAGUA|ROYAL|VIRU VIRU)/i);
       if (nameMatch) {
         stationName = nameMatch[1].toUpperCase();
       }

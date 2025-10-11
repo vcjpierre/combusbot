@@ -348,7 +348,20 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       5850011: { name: 'LA TECA', address: 'CARRETERA A COTOCA, ANTES DE LA TRANCA' },
       5849989: { name: 'LUCYFER', address: 'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE' },
       5850027: { name: 'PARAPETI', address: 'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS' },
-      5849996: { name: 'SUR CENTRAL', address: 'AV. SANTOS DUMONT, 2DO ANILLO' }
+      5849996: { name: 'SUR CENTRAL', address: 'AV. SANTOS DUMONT, 2DO ANILLO' },
+      5849969: { name: 'ALEMANA', address: 'AV. ALEMANA, 2DO ANILLO' },
+      5849999: { name: 'BENI', address: 'AV. BENI, 2DO ANILLO' },
+      5850030: { name: 'BEREA', address: 'DOBLE VIA LA GUARDIA KM 8' },
+      5849992: { name: 'MONTECRISTO', address: 'AV. MONTECRISTO, 2DO ANILLO' },
+      5849980: { name: 'EQUIPETROL', address: 'AV. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK' },
+      5850035: { name: 'GASCO', address: 'AV. BANZER 3ER ANILLO' },
+      5849985: { name: 'PARAGUA', address: 'AV. PARAGUA, 4TO ANILLO' },
+      5850020: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
+      5849977: { name: 'ROYAL', address: 'AV. ROQUE AGUILERA ESQ CALLE ANGEL SANDOVAL NRO 3897 ZONA VILLA FATIMA' },
+      5850007: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
+      5850003: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
+      5849972: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
+      5850016: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
     };
     
     // Buscar arrays PHP en el HTML
@@ -376,7 +389,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         address = stationMapping[id].address;
       } else {
         // Fallback: buscar en el contexto
-        const nameMatch = context.match(/(CABEZAS|EQUIPETROL|LA TECA|LUCYFER|PARAPETI|SUR CENTRAL|BIPETROL|YACUIBA|SANTA CRUZ|COCHABAMBA|LA PAZ|ORURO|POTOSI|SUCRE|TARIJA|BENI|PANDO)/i);
+        const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|MONTEVERDE|PARAGUA|ROYAL|VIRU VIRU)/i);
         if (nameMatch) {
           stationName = nameMatch[1].toUpperCase();
         }
