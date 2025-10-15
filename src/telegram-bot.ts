@@ -306,7 +306,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       
       message += `${volumeEmoji} *${station.nombre_estacion}*\n`;
       message += `⛽ ${station.volumen_disponible.toLocaleString()} Lts.\n`;
-      message += `🚗 ${station.cantidad_vehiculos} vehículos\n`;
       message += `⏱️ ${station.tiempo_espera_minutos} min. espera\n`;
       
       if (station.direccion !== 'Dirección no disponible') {

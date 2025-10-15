@@ -119,40 +119,16 @@ function extractDataFromHTML(html: string): ScrapedData {
     const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
     const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
     
-    // Extraer cantidad de vehículos - SOLO del HTML, sin cálculos
-    let vehicles = 0; // Valor por defecto si no se encuentra
-    
-    // Buscar diferentes patrones de vehículos en el HTML
-    const vehiclesPatterns = [
-      /(\d+)\s*vehículos?/i,
-      /vehículos?[:\s]*(\d+)/i,
-      /veh[:\s]*(\d+)/i,
-      /(\d+)\s*veh/i
-    ];
-    
-    for (const pattern of vehiclesPatterns) {
-      const match = context.match(pattern);
-      if (match) {
-        vehicles = parseInt(match[1]);
-        break;
-      }
-    }
-    
-    // Si no se encuentra en el HTML, usar 0 en lugar de calcular
-    if (vehicles === 0) {
-      vehicles = 0; // Mantener 0 si no se encuentra en la página
-    }
-    
     // Extraer tiempo de espera - buscar patrones más específicos
     let waitTime = 2; // Valor por defecto
-    
+
     const timePatterns = [
       /(\d+(?:\.\d+)?)\s*minutos?\s*aprox\.?/i,
       /tiempo[:\s]*(\d+(?:\.\d+)?)\s*min/i,
       /espera[:\s]*(\d+(?:\.\d+)?)\s*min/i,
       /(\d+(?:\.\d+)?)\s*min\s*espera/i
     ];
-    
+
     for (const pattern of timePatterns) {
       const match = context.match(pattern);
       if (match) {
@@ -172,7 +148,6 @@ function extractDataFromHTML(html: string): ScrapedData {
       saldo,
       nombre_estacion: stationName,
       volumen_disponible: volume,
-      cantidad_vehiculos: vehicles,
       tiempo_espera_minutos: waitTime,
       direccion: address,
       tipo_combustible: 'G',
@@ -210,7 +185,6 @@ function displayResults(data: ScrapedData): void {
     console.log(`\n${index + 1}. ${station.nombre_estacion}`);
     console.log(`   📍 ID: ${station.id} | Unidad: ${station.un}`);
     console.log(`   ⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts.`);
-    console.log(`   🚗 Vehículos: ${station.cantidad_vehiculos}`);
     console.log(`   ⏱️  Tiempo espera: ${station.tiempo_espera_minutos} min.`);
     console.log(`   📍 Dirección: ${station.direccion}`);
     console.log(`   📅 Fecha: ${station.fecha}`);

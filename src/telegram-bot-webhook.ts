@@ -280,7 +280,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       
       message += `${volumeEmoji} *${station.nombre_estacion}*\n`;
       message += `⛽ ${station.volumen_disponible.toLocaleString()} Lts.\n`;
-      message += `🚗 ${station.cantidad_vehiculos} vehículos\n`;
       message += `⏱️ ${station.tiempo_espera_minutos} min. espera\n`;
       
       if (station.direccion !== 'Dirección no disponible') {
@@ -399,10 +398,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
       const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
       
-      // Extraer cantidad de vehículos
-      const vehiclesMatch = context.match(/(\d+)\s*vehículos?/i);
-      const vehicles = vehiclesMatch ? parseInt(vehiclesMatch[1]) : Math.round(volume / 40);
-      
       // Extraer tiempo de espera
       const timeMatch = context.match(/(\d+(?:\.\d+)?)\s*minutos?/i);
       const waitTime = timeMatch ? parseFloat(timeMatch[1]) : 2;
@@ -418,7 +413,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         saldo,
         nombre_estacion: stationName,
         volumen_disponible: volume,
-        cantidad_vehiculos: vehicles,
         tiempo_espera_minutos: waitTime,
         direccion: address,
         tipo_combustible: 'G',

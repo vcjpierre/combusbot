@@ -407,7 +407,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       
       message += `${volumeEmoji} *${station.nombre_estacion}*\n`;
       message += `⛽ ${station.volumen_disponible.toLocaleString()} Lts.\n`;
-      message += `🚗 ${station.cantidad_vehiculos} vehículos\n`;
       message += `⏱️ ${station.tiempo_espera_minutos} min. espera\n`;
       
       if (station.direccion !== 'Dirección no disponible') {
@@ -496,30 +495,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
       const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
       
-      // Extraer cantidad de vehículos - SOLO del HTML, sin cálculos
-      let vehicles = 0; // Valor por defecto si no se encuentra
-      
-      // Buscar diferentes patrones de vehículos en el HTML
-      const vehiclesPatterns = [
-        /(\d+)\s*vehículos?/i,
-        /vehículos?[:\s]*(\d+)/i,
-        /veh[:\s]*(\d+)/i,
-        /(\d+)\s*veh/i
-      ];
-      
-      for (const pattern of vehiclesPatterns) {
-        const match = context.match(pattern);
-        if (match) {
-          vehicles = parseInt(match[1]);
-          break;
-        }
-      }
-      
-      // Si no se encuentra en el HTML, usar 0 en lugar de calcular
-      if (vehicles === 0) {
-        vehicles = 0; // Mantener 0 si no se encuentra en la página
-      }
-      
       // Extraer tiempo de espera - buscar patrones más específicos
       let waitTime = 2; // Valor por defecto
       
@@ -549,7 +524,6 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         saldo,
         nombre_estacion: stationName,
         volumen_disponible: volume,
-        cantidad_vehiculos: vehicles,
         tiempo_espera_minutos: waitTime,
         direccion: address,
         tipo_combustible: 'G',

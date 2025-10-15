@@ -10,7 +10,6 @@ export interface FuelStationData {
   saldo: string;
   nombre_estacion: string;
   volumen_disponible: number;
-  cantidad_vehiculos: number;
   tiempo_espera_minutos: number;
   direccion: string;
   tipo_combustible: string;
