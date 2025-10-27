@@ -113,7 +113,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     });
 
     // Comando /schedule
-    this.bot.onText(/\/schedule/, (msg) => {
+    this.bot.onText(/\/schedule/, async (msg) => {
       const chatId = msg.chat.id;
       const scheduleMessage = `
 ⏰ *Configuración del Scheduler*
@@ -123,13 +123,17 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 • Notificar solo cambios: ${this.config.notifyOnlyChanges ? 'Sí' : 'No'}
 • Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
 
-*Formato cron:* minuto hora día mes día_semana
+*Formato cron:* minuto hora día mes día de la semana
 • \`0 * * * *\` = Cada hora
 • \`0 */2 * * *\` = Cada 2 horas
 • \`0 8,12,16,20 * * *\` = 8am, 12pm, 4pm, 8pm
       `;
-      
-      this.bot.sendMessage(chatId, scheduleMessage, { parse_mode: 'Markdown' });
+
+      try {
+        await this.bot.sendMessage(chatId, scheduleMessage, { parse_mode: 'Markdown' });
+      } catch (error) {
+        console.error('Error enviando configuración del scheduler:', error);
+      }
     });
 
     // Comando /help
