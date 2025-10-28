@@ -1,6 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { load, CheerioAPI } from 'cheerio';
 import { FuelStationData, ScrapedData } from './types';
+
+interface StationInfo {
+  name: string;
+  address: string;
+  waitTimeMinutes?: number;
+}
+
+interface StationInfoMaps {
+  byId: Map<number, StationInfo>;
+  byUn: Map<number, StationInfo>;
+}
 
 async function scrapeWithFetch(): Promise<void> {
   try {
@@ -56,33 +68,14 @@ async function scrapeWithFetch(): Promise<void> {
  * Extrae datos del HTML usando regex y parsing manual
  */
 function extractDataFromHTML(html: string): ScrapedData {
+  const $ = load(html);
+  const stationInfoMaps = buildStationInfoMaps($);
   const stations: FuelStationData[] = [];
   
-  // Buscar información general
-  const titleMatch = html.match(/<h[4-6][^>]*>([^<]+)<\/h[4-6]>/i);
-  const measurementMatch = html.match(/Última medición\s+([^<\n]+)/i);
-  
-  // Mapeo de IDs conocidos a nombres y direcciones
-  const stationMapping: { [key: number]: { name: string; address: string } } = {
-    5850299: { name: 'CABEZAS', address: 'CARRETERA A CAMIRI LOCALIDAD CABEZAS - AV. ELOY ALPIRE' },
-    5850287: { name: 'LA TECA', address: 'CARRETERA A COTOCA, ANTES DE LA TRANCA' },
-    5849989: { name: 'LUCYFER', address: 'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE' },
-    5850303: { name: 'PARAPETI', address: 'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS' },
-    5850272: { name: 'SUR CENTRAL', address: 'AV. SANTOS DUMONT, 2DO ANILLO' },
-    5850245: { name: 'ALEMANA', address: 'AV. ALEMANA, 2DO ANILLO' },
-    5850275: { name: 'BENI', address: 'AV. BENI, 2DO ANILLO' },
-    5850306: { name: 'BEREA', address: 'DOBLE VIA LA GUARDIA KM 8' },
-    5850268: { name: 'MONTECRISTO', address: 'AV. MONTECRISTO, 2DO ANILLO' },
-    5850256: { name: 'EQUIPETROL', address: 'AV. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK' },
-    5850311: { name: 'GASCO', address: 'AV. BANZER 3ER ANILLO' },
-    5850261: { name: 'PARAGUA', address: 'AV. PARAGUA, 4TO ANILLO' },
-    5850296: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
-    5850253: { name: 'ROYAL', address: 'AV. ROQUE AGUILERA ESQ CALLE ANGEL SANDOVAL NRO 3897 ZONA VILLA FATIMA' },
-    5850283: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
-    5850279: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
-    5850248: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
-    5850292: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
-  };
+  const fuelTypeHeading = $('h5').filter((_, el) => $(el).text().includes('Saldos de')).first();
+  const measurementHeading = $('h5').filter((_, el) => $(el).text().includes('Última medición')).first();
+  const fuelType = fuelTypeHeading.length ? normalizeWhitespace(fuelTypeHeading.text().replace(/Saldos de/i, '')) : 'GASOLINA ESPECIAL';
+  const ultimaMedicion = measurementHeading.length ? normalizeWhitespace(measurementHeading.text().replace(/Última medición/i, '')) : 'No disponible';
   
   // Buscar arrays PHP en el HTML
   const phpArrayRegex = /array\(\d+\)\s*\{\s*\["id"\]=>\s*int\((\d+)\)\s*\["un"\]=>\s*int\((\d+)\)\s*\["producto_id"\]=>\s*int\((\d+)\)\s*\["fecha"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\["saldo"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\}/g;
@@ -101,39 +94,31 @@ function extractDataFromHTML(html: string): ScrapedData {
     const context = html.substring(contextStart, contextEnd);
     
     // Usar mapeo conocido o extraer del contexto
-    let stationName = `Estación ${id}`;
-    let address = 'Dirección no disponible';
-    
-    if (stationMapping[id]) {
-      stationName = stationMapping[id].name;
-      address = stationMapping[id].address;
-    } else {
-      // Fallback: buscar en el contexto
-      const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|MONTEVERDE|PARAGUA|ROYAL|VIRU VIRU)/i);
-      if (nameMatch) {
-        stationName = nameMatch[1].toUpperCase();
-      }
-    }
+    const stationInfo = stationInfoMaps.byId.get(id) ?? stationInfoMaps.byUn.get(un);
+    let stationName = stationInfo?.name ?? `Estación ${id}`;
+    let address = stationInfo?.address ?? 'Dirección no disponible';
     
     // Extraer volumen disponible - buscar en el contexto más amplio
     const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
     const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
     
     // Extraer tiempo de espera - buscar patrones más específicos
-    let waitTime = 2; // Valor por defecto
+    let waitTime = stationInfo?.waitTimeMinutes ?? 2;
 
-    const timePatterns = [
-      /(\d+(?:\.\d+)?)\s*minutos?\s*aprox\.?/i,
-      /tiempo[:\s]*(\d+(?:\.\d+)?)\s*min/i,
-      /espera[:\s]*(\d+(?:\.\d+)?)\s*min/i,
-      /(\d+(?:\.\d+)?)\s*min\s*espera/i
-    ];
+    if (!stationInfo?.waitTimeMinutes) {
+      const timePatterns = [
+        /(\d+(?:[.,]\d+)?)\s*minutos?\s*aprox\.?/i,
+        /tiempo[:\s]*(\d+(?:[.,]\d+)?)\s*min/i,
+        /espera[:\s]*(\d+(?:[.,]\d+)?)\s*min/i,
+        /(\d+(?:[.,]\d+)?)\s*min\s*espera/i
+      ];
 
-    for (const pattern of timePatterns) {
-      const match = context.match(pattern);
-      if (match) {
-        waitTime = parseFloat(match[1]);
-        break;
+      for (const pattern of timePatterns) {
+        const timeMatch = context.match(pattern);
+        if (timeMatch) {
+          waitTime = parseFloat(timeMatch[1].replace(',', '.'));
+          break;
+        }
       }
     }
     
@@ -160,10 +145,55 @@ function extractDataFromHTML(html: string): ScrapedData {
   
   return {
     timestamp: new Date().toISOString(),
-    ultima_medicion: measurementMatch ? measurementMatch[1].trim() : 'No disponible',
-    tipo_combustible: 'GASOLINA ESPECIAL',
+    ultima_medicion: ultimaMedicion,
+    tipo_combustible: fuelType,
     estaciones: stations
   };
+}
+
+function buildStationInfoMaps($: CheerioAPI): StationInfoMaps {
+  const byId = new Map<number, StationInfo>();
+  const byUn = new Map<number, StationInfo>();
+
+  $('.detalle').each((_, detailElement) => {
+    const detailText = $(detailElement).text();
+    const idMatch = detailText.match(/\["id"\]=>\s*int\((\d+)\)/);
+    if (!idMatch) {
+      return;
+    }
+
+    const unMatch = detailText.match(/\["un"\]=>\s*int\((\d+)\)/);
+    const id = parseInt(idMatch[1], 10);
+    const un = unMatch ? parseInt(unMatch[1], 10) : undefined;
+
+    const cardElement = $(detailElement).nextAll('.btn-bio-app').first();
+    const nameText = normalizeWhitespace(cardElement.find('.font-weight-bold').first().text());
+    const addressText = normalizeWhitespace(cardElement.find('.alert-secondary div').first().text());
+    const waitInfoText = normalizeWhitespace(cardElement.find('.fa-stopwatch').parent().next().text());
+
+    let waitTimeMinutes: number | undefined;
+    const waitMatch = waitInfoText.match(/(\d+(?:[.,]\d+)?)\s*min/i);
+    if (waitMatch) {
+      waitTimeMinutes = parseFloat(waitMatch[1].replace(',', '.'));
+    }
+
+    const info: StationInfo = {
+      name: nameText || `Estación ${id}`,
+      address: addressText || 'Dirección no disponible',
+      waitTimeMinutes
+    };
+
+    byId.set(id, info);
+    if (typeof un === 'number' && !Number.isNaN(un)) {
+      byUn.set(un, info);
+    }
+  });
+
+  return { byId, byUn };
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 /**

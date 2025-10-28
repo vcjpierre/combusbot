@@ -19,22 +19,28 @@
     "dev-bot-production": "ts-node src/production-bot.ts",
     "clean": "rimraf dist"
   },
-  "keywords": ["scraper", "fuel", "combustible", "puppeteer"],
+  "keywords": [
+    "scraper",
+    "fuel",
+    "combustible",
+    "puppeteer"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "puppeteer": "^24.23.0",
-    "node-telegram-bot-api": "^0.66.0",
+    "cheerio": "^1.1.2",
+    "dotenv": "^16.3.1",
     "node-cron": "^3.0.3",
-    "dotenv": "^16.3.1"
+    "node-telegram-bot-api": "^0.66.0",
+    "puppeteer": "^24.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "@types/node-telegram-bot-api": "^0.64.0",
     "@types/node-cron": "^3.0.11",
-    "typescript": "^5.3.0",
+    "@types/node-telegram-bot-api": "^0.64.0",
+    "rimraf": "^5.0.0",
     "ts-node": "^10.9.0",
-    "rimraf": "^5.0.0"
+    "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=22.13.0"
