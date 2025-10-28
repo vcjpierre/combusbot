@@ -355,12 +355,12 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       5850256: { name: 'EQUIPETROL', address: 'AV. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK' },
       5850311: { name: 'GASCO', address: 'AV. BANZER 3ER ANILLO' },
       5850261: { name: 'PARAGUA', address: 'AV. PARAGUA, 4TO ANILLO' },
-      5850020: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
+      5850296: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
       5850253: { name: 'ROYAL', address: 'AV. ROQUE AGUILERA ESQ CALLE ANGEL SANDOVAL NRO 3897 ZONA VILLA FATIMA' },
       5850283: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
       5850279: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
       5850248: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
-      5850016: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
+      5850292: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
     };
     
     // Buscar arrays PHP en el HTML
