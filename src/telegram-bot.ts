@@ -22,6 +22,7 @@ class FuelScraperBot {
   private config: BotConfig;
   private lastData: ScrapedData | null = null;
   private isRunning: boolean = false;
+  private cronTask: cron.ScheduledTask | null = null;
 
   constructor() {
     this.config = this.loadConfig();
@@ -76,27 +77,28 @@ class FuelScraperBot {
 • Notificaciones: ${this.config.notifyOnlyChanges ? 'Solo cambios' : 'Cada hora'}
 • Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
 • Horario: ${this.config.cronSchedule}
+• Estado: ${this.isRunning ? '🟢 Activo' : '🔴 Detenido'}
 
 El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! 🎉
       `;
       
-      this.bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
+      const menuKeyboard = {
+        inline_keyboard: [
+          [{ text: '📋 Menú', callback_data: 'menu' }],
+          [{ text: '📊 Estado', callback_data: 'status' }],
+          [{ text: this.isRunning ? '⏸️ Detener Bot' : '▶️ Iniciar Bot', callback_data: this.isRunning ? 'stop' : 'start' }]
+        ]
+      };
+      
+      this.bot.sendMessage(chatId, welcomeMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: menuKeyboard
+      });
     });
 
     // Comando /status
     this.bot.onText(/\/status/, (msg) => {
-      const chatId = msg.chat.id;
-      const statusMessage = `
-📊 *Estado del Bot*
-
-• Bot activo: ✅
-• Scheduler: ${this.isRunning ? '🟢 Ejecutándose' : '🔴 Detenido'}
-• Última ejecución: ${this.lastData ? new Date(this.lastData.timestamp).toLocaleString('es-ES') : 'Nunca'}
-• Estaciones monitoreadas: ${this.lastData ? this.lastData.estaciones.length : 0}
-• Próxima ejecución: ${this.getNextExecutionTime()}
-      `;
-      
-      this.bot.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });
+      this.showStatus(msg.chat.id);
     });
 
     // Comando /scrape
@@ -114,51 +116,72 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 
     // Comando /schedule
     this.bot.onText(/\/schedule/, async (msg) => {
-      const chatId = msg.chat.id;
-      const scheduleMessage = `
-⏰ *Configuración del Scheduler*
+      this.showSchedule(msg.chat.id);
+    });
 
-• Horario: \`${this.config.cronSchedule}\`
-• Descripción: ${this.getCronDescription()}
-• Notificar solo cambios: ${this.config.notifyOnlyChanges ? 'Sí' : 'No'}
-• Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
+    // Comando /menu
+    this.bot.onText(/\/menu/, (msg) => {
+      this.showMenu(msg.chat.id);
+    });
 
-*Formato cron:* minuto hora día mes día de la semana
-• \`0 * * * *\` = Cada hora
-• \`0 */2 * * *\` = Cada 2 horas
-• \`0 8,12,16,20 * * *\` = 8am, 12pm, 4pm, 8pm
-      `;
+    // Comando /stop
+    this.bot.onText(/\/stop/, (msg) => {
+      this.handleStop(msg.chat.id);
+    });
 
-      try {
-        await this.bot.sendMessage(chatId, scheduleMessage, { parse_mode: 'Markdown' });
-      } catch (error) {
-        console.error('Error enviando configuración del scheduler:', error);
-      }
+    // Comando /start_bot
+    this.bot.onText(/\/start_bot/, (msg) => {
+      this.handleStart(msg.chat.id);
     });
 
     // Comando /help
     this.bot.onText(/\/help/, (msg) => {
-      const chatId = msg.chat.id;
-      const helpMessage = `
-❓ *Ayuda - Bot de Combustible*
+      this.showHelp(msg.chat.id);
+    });
 
-*Comandos:*
-/start - Mensaje de bienvenida
-/status - Estado actual del bot
-/scrape - Ejecutar scraping manual
-/schedule - Ver configuración del scheduler
-/help - Esta ayuda
+    // Manejar callbacks de botones inline
+    this.bot.on('callback_query', (query) => {
+      const chatId = query.message?.chat.id;
+      const data = query.data;
 
-*Funcionalidades:*
-• Monitoreo automático de saldos
-• Notificaciones de cambios importantes
-• Datos en tiempo real de estaciones Biopetrol
-• Alertas de bajo inventario
+      if (!chatId) return;
 
-*Contacto:* Si tienes problemas, contacta al administrador.
-      `;
-      
-      this.bot.sendMessage(chatId, helpMessage, { parse_mode: 'Markdown' });
+      switch (data) {
+        case 'menu':
+          this.showMenu(chatId);
+          this.bot.answerCallbackQuery(query.id);
+          break;
+        case 'status':
+          this.bot.answerCallbackQuery(query.id);
+          this.showStatus(chatId);
+          break;
+        case 'stop':
+          this.handleStop(chatId);
+          this.bot.answerCallbackQuery(query.id);
+          break;
+        case 'start':
+          this.handleStart(chatId);
+          this.bot.answerCallbackQuery(query.id);
+          break;
+        case 'scrape':
+          this.bot.answerCallbackQuery(query.id, { text: 'Ejecutando scraping...' });
+          this.executeScraping().then(() => {
+            this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
+          }).catch((error) => {
+            this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+          });
+          break;
+        case 'schedule':
+          this.bot.answerCallbackQuery(query.id);
+          this.showSchedule(chatId);
+          break;
+        case 'help':
+          this.bot.answerCallbackQuery(query.id);
+          this.showHelp(chatId);
+          break;
+        default:
+          this.bot.answerCallbackQuery(query.id);
+      }
     });
 
     // Manejar errores
@@ -187,9 +210,19 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
   }
 
   public startScheduler(): void {
+    if (this.cronTask) {
+      console.log('⚠️ El scheduler ya está iniciado');
+      return;
+    }
+
     console.log(`⏰ Iniciando scheduler con horario: ${this.config.cronSchedule}`);
     
-    cron.schedule(this.config.cronSchedule, async () => {
+    this.cronTask = cron.schedule(this.config.cronSchedule, async () => {
+      if (!this.isRunning) {
+        console.log('⏸️ Scheduler detenido, omitiendo ejecución...');
+        return;
+      }
+      
       console.log('🔄 Ejecutando scraping programado...');
       try {
         await this.executeScraping();
@@ -204,6 +237,207 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 
     this.isRunning = true;
     console.log('✅ Scheduler iniciado correctamente');
+  }
+
+  public stopScheduler(): void {
+    if (this.cronTask) {
+      this.cronTask.stop();
+      this.cronTask = null;
+    }
+    this.isRunning = false;
+    console.log('🛑 Scheduler detenido');
+  }
+
+  private showMenu(chatId: number): void {
+    const menuMessage = `
+📋 *Menú del Bot*
+
+Selecciona una opción:
+
+*Estado:*
+• Scheduler: ${this.isRunning ? '🟢 Activo' : '🔴 Detenido'}
+• Última ejecución: ${this.lastData ? new Date(this.lastData.timestamp).toLocaleString('es-ES') : 'Nunca'}
+
+*Opciones disponibles:*
+    `;
+
+    const menuKeyboard = {
+      inline_keyboard: [
+        [
+          { text: '📊 Estado', callback_data: 'status' },
+          { text: '🔄 Scraping Manual', callback_data: 'scrape' }
+        ],
+        [
+          { text: '⏰ Horario', callback_data: 'schedule' },
+          { text: '❓ Ayuda', callback_data: 'help' }
+        ],
+        [
+          { text: this.isRunning ? '⏸️ Detener Bot' : '▶️ Iniciar Bot', callback_data: this.isRunning ? 'stop' : 'start' }
+        ]
+      ]
+    };
+
+    this.bot.sendMessage(chatId, menuMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: menuKeyboard
+    });
+  }
+
+  private showStatus(chatId: number): void {
+    const statusMessage = `
+📊 *Estado del Bot*
+
+• Bot activo: ✅
+• Scheduler: ${this.isRunning ? '🟢 Ejecutándose' : '🔴 Detenido'}
+• Última ejecución: ${this.lastData ? new Date(this.lastData.timestamp).toLocaleString('es-ES') : 'Nunca'}
+• Estaciones monitoreadas: ${this.lastData ? this.lastData.estaciones.length : 0}
+• Próxima ejecución: ${this.getNextExecutionTime()}
+    `;
+    
+    const menuKeyboard = {
+      inline_keyboard: [
+        [{ text: '📋 Menú', callback_data: 'menu' }],
+        [{ text: this.isRunning ? '⏸️ Detener Bot' : '▶️ Iniciar Bot', callback_data: this.isRunning ? 'stop' : 'start' }]
+      ]
+    };
+    
+    this.bot.sendMessage(chatId, statusMessage, { 
+      parse_mode: 'Markdown',
+      reply_markup: menuKeyboard
+    });
+  }
+
+  private async showSchedule(chatId: number): Promise<void> {
+    const scheduleMessage = `
+⏰ *Configuración del Scheduler*
+
+• Horario: \`${this.config.cronSchedule}\`
+• Descripción: ${this.getCronDescription()}
+• Notificar solo cambios: ${this.config.notifyOnlyChanges ? 'Sí' : 'No'}
+• Volumen mínimo: ${this.config.minVolumeThreshold} Lts.
+
+*Formato cron:* minuto hora día mes día de la semana
+• \`0 * * * *\` = Cada hora
+• \`0 */2 * * *\` = Cada 2 horas
+• \`0 8,12,16,20 * * *\` = 8am, 12pm, 4pm, 8pm
+    `;
+
+    const menuKeyboard = {
+      inline_keyboard: [
+        [{ text: '📋 Menú', callback_data: 'menu' }]
+      ]
+    };
+
+    try {
+      await this.bot.sendMessage(chatId, scheduleMessage, { 
+        parse_mode: 'Markdown',
+        reply_markup: menuKeyboard
+      });
+    } catch (error) {
+      console.error('Error enviando configuración del scheduler:', error);
+    }
+  }
+
+  private showHelp(chatId: number): void {
+    const helpMessage = `
+❓ *Ayuda - Bot de Combustible*
+
+*Comandos:*
+/start - Mensaje de bienvenida
+/menu - Mostrar menú de opciones
+/status - Estado actual del bot
+/stop - Detener el bot (deja de enviar notificaciones)
+/start_bot - Iniciar el bot (reanuda las notificaciones)
+/scrape - Ejecutar scraping manual
+/schedule - Ver configuración del scheduler
+/help - Esta ayuda
+
+*Funcionalidades:*
+• Monitoreo automático de saldos
+• Notificaciones de cambios importantes
+• Datos en tiempo real de estaciones Biopetrol
+• Alertas de bajo inventario
+• Control de inicio/detención del bot
+
+*Contacto:* Si tienes problemas, contacta al administrador.
+    `;
+    
+    const menuKeyboard = {
+      inline_keyboard: [
+        [{ text: '📋 Menú', callback_data: 'menu' }]
+      ]
+    };
+    
+    this.bot.sendMessage(chatId, helpMessage, { 
+      parse_mode: 'Markdown',
+      reply_markup: menuKeyboard
+    });
+  }
+
+  private handleStop(chatId: number): void {
+    if (!this.isRunning) {
+      this.bot.sendMessage(chatId, '⚠️ El bot ya está detenido.');
+      return;
+    }
+
+    this.stopScheduler();
+    const message = `
+⏸️ *Bot Detenido*
+
+El bot ha sido detenido exitosamente.
+
+• Scheduler: 🔴 Detenido
+• Notificaciones: ❌ Desactivadas
+
+Las notificaciones automáticas ya no se enviarán hasta que inicies el bot nuevamente.
+
+Usa /start_bot o el botón "Iniciar Bot" para reanudar.
+    `;
+
+    const menuKeyboard = {
+      inline_keyboard: [
+        [{ text: '▶️ Iniciar Bot', callback_data: 'start' }],
+        [{ text: '📋 Menú', callback_data: 'menu' }]
+      ]
+    };
+
+    this.bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: menuKeyboard
+    });
+  }
+
+  private handleStart(chatId: number): void {
+    if (this.isRunning) {
+      this.bot.sendMessage(chatId, '⚠️ El bot ya está en ejecución.');
+      return;
+    }
+
+    this.startScheduler();
+    const message = `
+▶️ *Bot Iniciado*
+
+El bot ha sido iniciado exitosamente.
+
+• Scheduler: 🟢 Activo
+• Notificaciones: ✅ Activadas
+
+Las notificaciones automáticas se reanudarán según el horario configurado.
+
+Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
+    `;
+
+    const menuKeyboard = {
+      inline_keyboard: [
+        [{ text: '⏸️ Detener Bot', callback_data: 'stop' }],
+        [{ text: '📋 Menú', callback_data: 'menu' }]
+      ]
+    };
+
+    this.bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
+      reply_markup: menuKeyboard
+    });
   }
 
   private async executeScraping(): Promise<void> {
@@ -251,6 +485,11 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
   }
 
   private shouldNotify(currentData: ScrapedData): boolean {
+    // Si el bot está detenido, no enviar notificaciones
+    if (!this.isRunning) {
+      return false;
+    }
+
     if (!this.config.notifyOnlyChanges || !this.lastData) {
       return true;
     }
@@ -371,8 +610,8 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
   }
 
   public stop(): void {
+    this.stopScheduler();
     this.bot.stopPolling();
-    this.isRunning = false;
     console.log('🛑 Bot detenido');
   }
 }
