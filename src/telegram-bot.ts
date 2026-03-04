@@ -23,9 +23,17 @@ class FuelScraperBot {
   private lastData: ScrapedData | null = null;
   private isRunning: boolean = false;
   private cronTask: cron.ScheduledTask | null = null;
+  private lockFilePath: string;
+  private lockAcquired: boolean = false;
+  private pollingRestartTimer: NodeJS.Timeout | null = null;
+  private pollingRestartAttempt: number = 0;
+  private pollingConflictHandled: boolean = false;
+  private shuttingDown: boolean = false;
 
   constructor() {
     this.config = this.loadConfig();
+    this.lockFilePath = path.join(process.cwd(), '.telegram-bot.lock');
+    this.acquireInstanceLock();
     this.bot = new TelegramBot(this.config.token, { 
       polling: {
         interval: 300,
@@ -186,27 +194,152 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 
     // Manejar errores
     this.bot.on('error', (error) => {
-      console.error('Error del bot:', error);
-      // Intentar reconectar después de 5 segundos
-      setTimeout(() => {
-        console.log('🔄 Intentando reconectar...');
-        this.bot.startPolling();
-      }, 5000);
+      const botError = error as any;
+      const message = botError?.message || 'Error desconocido';
+      const code = botError?.code || 'UNKNOWN';
+      console.error(`Error del bot [${code}]: ${message}`);
     });
 
     this.bot.on('polling_error', (error: any) => {
-      console.error('Error de polling:', error);
-      // Si es un error de red, intentar reconectar
-      if (error.code === 'EFATAL' || error.code === 'ENOTFOUND') {
-        console.log('🔄 Error de red detectado, intentando reconectar en 10 segundos...');
-        setTimeout(() => {
-          this.bot.stopPolling();
-          this.bot.startPolling();
-        }, 10000);
-      }
+      this.handlePollingError(error);
     });
 
     console.log('✅ Bot configurado correctamente');
+  }
+
+  private acquireInstanceLock(): void {
+    try {
+      fs.writeFileSync(this.lockFilePath, `${process.pid}`, { flag: 'wx' });
+      this.lockAcquired = true;
+      console.log(`🔒 Lock de instancia adquirido en ${this.lockFilePath}`);
+    } catch (error: any) {
+      if (error?.code === 'EEXIST') {
+        try {
+          const rawPid = fs.readFileSync(this.lockFilePath, 'utf8').trim();
+          const lockPid = Number.parseInt(rawPid, 10);
+
+          if (Number.isFinite(lockPid)) {
+            try {
+              process.kill(lockPid, 0);
+              throw new Error(`Otra instancia del bot parece estar activa (PID: ${lockPid}).`);
+            } catch (killError: any) {
+              if (killError?.code === 'ESRCH') {
+                fs.unlinkSync(this.lockFilePath);
+                fs.writeFileSync(this.lockFilePath, `${process.pid}`, { flag: 'wx' });
+                this.lockAcquired = true;
+                console.log(`🔓 Lock obsoleto eliminado. Nuevo lock adquirido en ${this.lockFilePath}`);
+                return;
+              }
+
+              throw killError;
+            }
+          }
+        } catch {
+          throw new Error(`Otra instancia del bot parece estar activa (lock: ${this.lockFilePath}).`);
+        }
+      }
+      throw error;
+    }
+  }
+
+  private releaseInstanceLock(): void {
+    if (!this.lockAcquired) {
+      return;
+    }
+
+    try {
+      fs.unlinkSync(this.lockFilePath);
+      this.lockAcquired = false;
+      console.log('🔓 Lock de instancia liberado');
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') {
+        console.warn('⚠️ No se pudo liberar el lock de instancia:', error?.message || error);
+      }
+    }
+  }
+
+  private clearPollingRestartTimer(): void {
+    if (this.pollingRestartTimer) {
+      clearTimeout(this.pollingRestartTimer);
+      this.pollingRestartTimer = null;
+    }
+  }
+
+  private schedulePollingRestart(): void {
+    if (this.shuttingDown || this.pollingConflictHandled || this.pollingRestartTimer) {
+      return;
+    }
+
+    this.pollingRestartAttempt += 1;
+    const delayMs = Math.min(30000, this.pollingRestartAttempt * 5000);
+
+    console.log(`🔄 Error de red en polling, reintentando en ${Math.round(delayMs / 1000)}s...`);
+
+    this.pollingRestartTimer = setTimeout(async () => {
+      this.pollingRestartTimer = null;
+
+      if (this.shuttingDown || this.pollingConflictHandled) {
+        return;
+      }
+
+      try {
+        await this.bot.stopPolling();
+      } catch {
+        // Ignorar si ya estaba detenido
+      }
+
+      try {
+        await this.bot.startPolling();
+        this.pollingRestartAttempt = 0;
+        console.log('✅ Polling reconectado correctamente');
+      } catch (startError: any) {
+        console.error(`❌ No se pudo reiniciar polling: ${startError?.message || startError}`);
+        this.schedulePollingRestart();
+      }
+    }, delayMs);
+  }
+
+  private async shutdownDueToPollingConflict(): Promise<void> {
+    if (this.shuttingDown) {
+      return;
+    }
+
+    this.shuttingDown = true;
+    this.stopScheduler();
+    this.clearPollingRestartTimer();
+
+    try {
+      await this.bot.stopPolling();
+    } catch {
+      // Ignorar
+    }
+
+    this.releaseInstanceLock();
+    console.error('🛑 Cerrando proceso por conflicto de polling (409). Asegura una sola instancia activa.');
+    setTimeout(() => process.exit(1), 200);
+  }
+
+  private handlePollingError(error: any): void {
+    const code = error?.code;
+    const statusCode = error?.response?.statusCode;
+    const message = error?.message || 'Error de polling desconocido';
+
+    if (statusCode === 409 || (code === 'ETELEGRAM' && message.includes('409 Conflict'))) {
+      if (this.pollingConflictHandled) {
+        return;
+      }
+
+      this.pollingConflictHandled = true;
+      console.error('❌ Conflicto 409 en polling: otra instancia está consumiendo getUpdates.');
+      void this.shutdownDueToPollingConflict();
+      return;
+    }
+
+    console.error(`Error de polling [${code || 'UNKNOWN'}]: ${message}`);
+
+    if (code === 'EFATAL' || code === 'ENOTFOUND' || code === 'ECONNRESET' || code === 'ETIMEDOUT') {
+      this.schedulePollingRestart();
+    }
   }
 
   public startScheduler(): void {
@@ -610,8 +743,11 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
   }
 
   public stop(): void {
+    this.shuttingDown = true;
+    this.clearPollingRestartTimer();
     this.stopScheduler();
-    this.bot.stopPolling();
+    this.bot.stopPolling().catch(() => undefined);
+    this.releaseInstanceLock();
     console.log('🛑 Bot detenido');
   }
 }
