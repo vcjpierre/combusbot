@@ -201,7 +201,8 @@ export class FuelBot {
         return;
       }
       const header = `*${escapeMarkdown(data.tipo_combustible)}*\nMedición: ${escapeMarkdown(data.ultima_medicion)}`;
-      const lines = data.estaciones.map((s) => {
+      const sorted = [...data.estaciones].sort((a, b) => b.volumen_disponible - a.volumen_disponible);
+      const lines = sorted.map((s) => {
         const meta = STATION_META[s.nombre_estacion];
         const idStr = meta ? ` (ID: ${meta.id})` : '';
         return `• *${escapeMarkdown(s.nombre_estacion)}*${escapeMarkdown(idStr)}\n  Vol: ${s.volumen_disponible.toLocaleString()} Lts | Espera: ${s.tiempo_espera_minutos} min\n  Dir: ${escapeMarkdown(s.direccion)}`;
@@ -276,7 +277,8 @@ export class FuelBot {
       ];
       if (lowStock.length > 0) {
         lines.push('', `*Bajo stock (< ${getConfig().MIN_VOLUME_THRESHOLD} Lts):*`);
-        lowStock.forEach((s) => lines.push(`• ${escapeMarkdown(s.nombre_estacion)}: ${s.volumen_disponible.toLocaleString()} Lts`));
+        const lowStockSorted = [...lowStock].sort((a, b) => a.volumen_disponible - b.volumen_disponible);
+        lowStockSorted.forEach((s) => lines.push(`• ${escapeMarkdown(s.nombre_estacion)}: ${s.volumen_disponible.toLocaleString()} Lts`));
       }
       await this.safeSendMessage(chatId, lines.join('\n'));
     } catch {
@@ -354,7 +356,12 @@ export class FuelBot {
         return;
       }
 
-      const lines = stationsToNotify.map((name) => {
+      const sortedNotify = stationsToNotify.sort((a, b) => {
+        const va = newStationMap.get(a)?.volumen_disponible ?? 0;
+        const vb = newStationMap.get(b)?.volumen_disponible ?? 0;
+        return vb - va;
+      });
+      const lines = sortedNotify.map((name) => {
         const station = newStationMap.get(name)!;
         const trend = getStationTrend(name, 24);
         let trendText = '';
