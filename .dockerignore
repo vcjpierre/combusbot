@@ -2,6 +2,10 @@ node_modules
 dist
 output
 .env
+.git
+.github
+tests
+*.md
 *.log
 .git
 .github

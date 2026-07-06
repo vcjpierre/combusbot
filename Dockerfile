@@ -1,14 +1,14 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+COPY package.json ./
+RUN npm install
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN pnpm build
+RUN npx tsc
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/node_modules/ ./node_modules/
 RUN mkdir -p output
