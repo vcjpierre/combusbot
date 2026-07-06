@@ -1,8 +1,9 @@
 import TelegramBot from 'node-telegram-bot-api';
 import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
-import { scrapeWithFetch, extractDataFromHTML } from './scraper';
-import { ScrapedData, FuelStationData } from './types';
+import { scrapeUrl as scrapeWithFetch, extractDataFromHTML } from './scraper';
+import { load } from 'cheerio';
+import { ScrapedData, FuelStationData, escapeMarkdown } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -85,8 +86,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         ]
       };
       
-      this.bot.sendMessage(chatId, welcomeMessage, { 
-        parse_mode: 'Markdown',
+      this.safeSendMessage(chatId, welcomeMessage, { 
         reply_markup: menuKeyboard
       });
     });
@@ -104,19 +104,19 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
 • Próxima ejecución: ${this.getNextExecutionTime()}
       `;
       
-      this.bot.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });
+      this.safeSendMessage(chatId, statusMessage);
     });
 
     // Comando /scrape
     this.bot.onText(/\/scrape/, async (msg) => {
       const chatId = msg.chat.id;
-      this.bot.sendMessage(chatId, '🔄 Ejecutando scraping manual...');
+      this.safeSendMessage(chatId, '🔄 Ejecutando scraping manual...');
       
       try {
         await this.executeScraping();
-        this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
+        this.safeSendMessage(chatId, '✅ Scraping completado exitosamente!');
       } catch (error) {
-        this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+        this.safeSendMessage(chatId, `❌ Error en scraping: ${escapeMarkdown(String(error))}`);
       }
     });
 
@@ -172,9 +172,9 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         case 'scrape':
           this.bot.answerCallbackQuery(query.id, { text: 'Ejecutando scraping...' });
           this.executeScraping().then(() => {
-            this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
+            this.safeSendMessage(chatId, '✅ Scraping completado exitosamente!');
           }).catch((error) => {
-            this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+            this.safeSendMessage(chatId, `❌ Error en scraping: ${escapeMarkdown(String(error))}`);
           });
           break;
         case 'schedule':
@@ -191,6 +191,18 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     });
 
     console.log('✅ Bot configurado correctamente (modo webhook)');
+  }
+
+  private async safeSendMessage(chatId: number | string, message: string, options: any = {}): Promise<void> {
+    try {
+      await this.bot.sendMessage(chatId, message, { ...options, parse_mode: 'Markdown' });
+    } catch (markdownError) {
+      try {
+        await this.bot.sendMessage(chatId, message, { ...options, parse_mode: undefined });
+      } catch (plainError) {
+        console.error('Error enviando mensaje:', plainError);
+      }
+    }
   }
 
   public startScheduler(): void {
@@ -213,7 +225,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
       } catch (error) {
         console.error('Error en scraping programado:', error);
         try {
-          await this.bot.sendMessage(this.config.chatId, `❌ Error en scraping automático: ${error}`);
+          await this.safeSendMessage(this.config.chatId, `❌ Error en scraping automático: ${escapeMarkdown(String(error))}`);
         } catch (botError) {
           console.error('Error enviando mensaje de error:', botError);
         }
@@ -265,8 +277,7 @@ Selecciona una opción:
       ]
     };
 
-    this.bot.sendMessage(chatId, menuMessage, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, menuMessage, {
       reply_markup: menuKeyboard
     });
   }
@@ -289,8 +300,7 @@ Selecciona una opción:
       ]
     };
     
-    this.bot.sendMessage(chatId, statusMessage, { 
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, statusMessage, { 
       reply_markup: menuKeyboard
     });
   }
@@ -316,8 +326,7 @@ Selecciona una opción:
       ]
     };
     
-    this.bot.sendMessage(chatId, scheduleMessage, { 
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, scheduleMessage, { 
       reply_markup: menuKeyboard
     });
   }
@@ -352,15 +361,14 @@ Selecciona una opción:
       ]
     };
     
-    this.bot.sendMessage(chatId, helpMessage, { 
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, helpMessage, { 
       reply_markup: menuKeyboard
     });
   }
 
   private handleStop(chatId: number): void {
     if (!this.isRunning) {
-      this.bot.sendMessage(chatId, '⚠️ El bot ya está detenido.');
+      this.safeSendMessage(chatId, '⚠️ El bot ya está detenido.');
       return;
     }
 
@@ -385,15 +393,14 @@ Usa /start_bot o el botón "Iniciar Bot" para reanudar.
       ]
     };
 
-    this.bot.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, message, {
       reply_markup: menuKeyboard
     });
   }
 
   private handleStart(chatId: number): void {
     if (this.isRunning) {
-      this.bot.sendMessage(chatId, '⚠️ El bot ya está en ejecución.');
+      this.safeSendMessage(chatId, '⚠️ El bot ya está en ejecución.');
       return;
     }
 
@@ -418,8 +425,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
       ]
     };
 
-    this.bot.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, message, {
       reply_markup: menuKeyboard
     });
   }
@@ -427,7 +433,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
   private async executeScraping(): Promise<void> {
     try {
       // Ejecutar scraping
-      const url = process.env.SCRAPER_URL || 'http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134';
+      const url = process.env.SCRAPER_URL || 'https://app9.biocloud.info/saldos/main/donde/134';
       
       const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -502,8 +508,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     const message = this.formatTelegramMessage(data);
     
     try {
-      await this.bot.sendMessage(this.config.chatId, message, { 
-        parse_mode: 'Markdown',
+      await this.safeSendMessage(this.config.chatId, message, { 
         disable_web_page_preview: true
       });
       console.log('📤 Notificación enviada exitosamente');
@@ -516,7 +521,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     const timestamp = new Date(data.timestamp).toLocaleString('es-ES');
     
     let message = `🚗 *Saldos de Combustible Biopetrol*\n`;
-    message += `🕐 ${data.ultima_medicion}\n`;
+    message += `🕐 ${escapeMarkdown(data.ultima_medicion)}\n`;
     message += `📅 ${timestamp}\n\n`;
     
     // Ordenar estaciones por volumen (mayor a menor)
@@ -526,12 +531,12 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
       const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : 
                          station.volumen_disponible > 1000 ? '🟡' : '🔴';
       
-      message += `${volumeEmoji} *${station.nombre_estacion}*\n`;
+      message += `${volumeEmoji} *${escapeMarkdown(station.nombre_estacion)}*\n`;
       message += `⛽ ${station.volumen_disponible.toLocaleString()} Lts.\n`;
       message += `⏱️ ${station.tiempo_espera_minutos} min. espera\n`;
       
       if (station.direccion !== 'Dirección no disponible') {
-        message += `📍 ${station.direccion}\n`;
+        message += `📍 ${escapeMarkdown(station.direccion)}\n`;
       }
       
       message += `\n`;
@@ -546,7 +551,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     message += `• Estaciones: ${data.estaciones.length}\n`;
     
     if (lowVolumeStations.length > 0) {
-      message += `⚠️ *Bajo inventario:* ${lowVolumeStations.map(s => s.nombre_estacion).join(', ')}\n`;
+      message += `⚠️ *Bajo inventario:* ${lowVolumeStations.map(s => escapeMarkdown(s.nombre_estacion)).join(', ')}\n`;
     }
     
     return message;
@@ -583,98 +588,80 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
   }
 
   private extractDataFromHTML(html: string): ScrapedData {
+    const $ = load(html);
     const stations: FuelStationData[] = [];
     
-    // Buscar información general
-    const titleMatch = html.match(/<h[4-6][^>]*>([^<]+)<\/h[4-6]>/i);
-    const measurementMatch = html.match(/Última medición\s+([^<\n]+)/i);
+    const fuelTypeHeading = $('h5').filter((_, el) => $(el).text().includes('Saldos de')).first();
+    const measurementHeading = $('h5').filter((_, el) => $(el).text().includes('Última medición')).first();
+    const fuelType = fuelTypeHeading.length ? fuelTypeHeading.text().replace(/Saldos de/i, '').trim() : 'GASOLINA ESPECIAL';
+    const ultimaMedicion = measurementHeading.length ? measurementHeading.text().replace(/Última medición/i, '').trim() : 'No disponible';
     
-    // Mapeo de IDs conocidos a nombres y direcciones
-    const stationMapping: { [key: number]: { name: string; address: string } } = {
-      5850299: { name: 'CABEZAS', address: 'CARRETERA A CAMIRI LOCALIDAD CABEZAS - AV. ELOY ALPIRE' },
-      5850287: { name: 'LA TECA', address: 'CARRETERA A COTOCA, ANTES DE LA TRANCA' },
-      5849989: { name: 'LUCYFER', address: 'ORURO - CIRCUNVALACION CALLE A NUM 80, ZONA NORESTE' },
-      5850303: { name: 'PARAPETI', address: 'CAMIRI CARRETERA YACUIBA-SANTA CRUZ KM1 ZONA BARRIO LA WILLAMS' },
-      5850272: { name: 'SUR CENTRAL', address: 'AV. SANTOS DUMONT, 2DO ANILLO' },
-      5850245: { name: 'ALEMANA', address: 'AV. ALEMANA, 2DO ANILLO' },
-      5850275: { name: 'BENI', address: 'AV. BENI, 2DO ANILLO' },
-      5850306: { name: 'BEREA', address: 'DOBLE VIA LA GUARDIA KM 8' },
-      5850268: { name: 'MONTECRISTO', address: 'AV. MONTECRISTO, 2DO ANILLO' },
-      5850256: { name: 'EQUIPETROL', address: 'AV. EQUIPETROL, 4TO ANILLO AL FRENTE DE EX - BUFALO PARK' },
-      5850311: { name: 'GASCO', address: 'AV. BANZER 3ER ANILLO' },
-      5850261: { name: 'PARAGUA', address: 'AV. PARAGUA, 4TO ANILLO' },
-      5850296: { name: 'PIRAI', address: 'AV. ROCA Y CORONADO 3ER ANILLO' },
-      5850253: { name: 'ROYAL', address: 'AV. ROQUE AGUILERA ESQ CALLE ANGEL SANDOVAL NRO 3897 ZONA VILLA FATIMA' },
-      5850283: { name: 'VIRU VIRU', address: 'KM11 AL NORTE A LADO DE PLAY LAND PARK' },
-      5850279: { name: 'LOPEZ', address: 'AV. BANZER, 7MO ANILLO' },
-      5850248: { name: 'CHACO', address: 'AV. VIRGEN DE COTOCA, 2DO ANILLO' },
-      5850292: { name: 'MONTEVERDE', address: 'LOCALIDAD MONTERO, AV. CIRCUNVALACIÓN' }
+    const stationMeta: { [name: string]: { id: number; un: number; producto_id: number } } = {
+      'ALEMANA':     { id: 5850245, un: 1, producto_id: 1 },
+      'BENI':        { id: 5850275, un: 1, producto_id: 1 },
+      'BEREA':       { id: 5850306, un: 1, producto_id: 1 },
+      'CABEZAS':     { id: 5850299, un: 1, producto_id: 1 },
+      'CEDENO':      { id: 5850330, un: 1, producto_id: 1 },
+      'EQUIPETROL':  { id: 5850256, un: 1, producto_id: 1 },
+      'GASCO':       { id: 5850311, un: 1, producto_id: 1 },
+      'LA TECA':     { id: 5850287, un: 1, producto_id: 1 },
+      'LUCYFER':     { id: 5849989, un: 1, producto_id: 1 },
+      'MONTECRISTO': { id: 5850268, un: 1, producto_id: 1 },
+      'PARAPETI':    { id: 5850303, un: 1, producto_id: 1 },
+      'PIRAI':       { id: 5850296, un: 1, producto_id: 1 },
+      'ROYAL':       { id: 5850253, un: 1, producto_id: 1 },
+      'SUR CENTRAL': { id: 5850272, un: 1, producto_id: 1 },
+      'VIRU VIRU':   { id: 5850283, un: 1, producto_id: 1 },
     };
     
-    // Buscar arrays PHP en el HTML
-    const phpArrayRegex = /array\(\d+\)\s*\{\s*\["id"\]=>\s*int\((\d+)\)\s*\["un"\]=>\s*int\((\d+)\)\s*\["producto_id"\]=>\s*int\((\d+)\)\s*\["fecha"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\["saldo"\]=>\s*string\(\d+\)\s*"([^"]+)"\s*\}/g;
+    let stationIndex = 0;
     
-    let match;
-    while ((match = phpArrayRegex.exec(html)) !== null) {
-      const id = parseInt(match[1]);
-      const un = parseInt(match[2]);
-      const producto_id = parseInt(match[3]);
-      const fecha = match[4];
-      const saldo = match[5];
+    $('.btn-bio-app').each((_, cardElement) => {
+      const $card = $(cardElement);
       
-      // Buscar información adicional alrededor del array PHP
-      const contextStart = Math.max(0, match.index - 3000);
-      const contextEnd = Math.min(html.length, match.index + 3000);
-      const context = html.substring(contextStart, contextEnd);
+      const nameText = normalizeWhitespace($card.find('.font-weight-bold').first().text());
+      if (!nameText) return;
       
-      // Usar mapeo conocido o extraer del contexto
-      let stationName = `Estación ${id}`;
-      let address = 'Dirección no disponible';
+      const cardText = $card.text();
       
-      if (stationMapping[id]) {
-        stationName = stationMapping[id].name;
-        address = stationMapping[id].address;
-      } else {
-        // Fallback: buscar en el contexto
-        const nameMatch = context.match(/(CABEZAS|EQUIPETROL|PIRAI|LA TECA|ALEMANA|BEREA|LUCYFER|LOPEZ|BENI|CHACO|GASCO|PARAPETI|SUR CENTRAL|MONTECRISTO|MONTEVERDE|PARAGUA|ROYAL|VIRU VIRU)/i);
-        if (nameMatch) {
-          stationName = nameMatch[1].toUpperCase();
-        }
-      }
+      const volumeMatch = cardText.match(/([\d,.]+)\s*Lts\.?/i);
+      const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : 0;
       
-      // Extraer volumen disponible - buscar en el contexto más amplio
-      const volumeMatch = context.match(/(\d{1,3}(?:,\d{3})*)\s*Lts?\.?/i);
-      const volume = volumeMatch ? parseInt(volumeMatch[1].replace(/,/g, '')) : parseInt(saldo);
+      const waitMatch = cardText.match(/(\d+(?:[.,]\d+)?)\s*minutos?\s*aprox\.?/i);
+      const waitTime = waitMatch ? parseFloat(waitMatch[1].replace(',', '.')) : 2;
       
-      // Extraer tiempo de espera
-      const timeMatch = context.match(/(\d+(?:\.\d+)?)\s*minutos?/i);
-      const waitTime = timeMatch ? parseFloat(timeMatch[1]) : 2;
+      const addressText = normalizeWhitespace($card.find('.alert-secondary div').first().text()) || 'Dirección no disponible';
       
-      // Calcular mangueras basado en el tiempo de espera
+      const meta = stationMeta[nameText] ?? { id: 9000 + stationIndex, un: 1, producto_id: 1 };
+      const now = new Date();
+      const fecha = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      
       const mangueras = Math.max(1, Math.round(12 / waitTime));
       
       stations.push({
-        id,
-        un,
-        producto_id,
+        id: meta.id,
+        un: meta.un,
+        producto_id: meta.producto_id,
         fecha,
-        saldo,
-        nombre_estacion: stationName,
+        saldo: String(volume),
+        nombre_estacion: nameText,
         volumen_disponible: volume,
         tiempo_espera_minutos: waitTime,
-        direccion: address,
+        direccion: addressText,
         tipo_combustible: 'G',
         tiempo_carga: 12,
         mangueras,
         carga_promedio: 40,
         tiempo_carga_por_manguera: waitTime
       });
-    }
+      
+      stationIndex++;
+    });
     
     return {
       timestamp: new Date().toISOString(),
-      ultima_medicion: measurementMatch ? measurementMatch[1].trim() : 'No disponible',
-      tipo_combustible: 'GASOLINA ESPECIAL',
+      ultima_medicion: ultimaMedicion,
+      tipo_combustible: fuelType,
       estaciones: stations
     };
   }
@@ -690,6 +677,10 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
 }
 
 // Función principal
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
 async function main(): Promise<void> {
   try {
     console.log('🚀 Iniciando Bot de Saldos de Combustible (modo webhook)...');
@@ -713,7 +704,7 @@ Usa /help para ver todos los comandos disponibles.
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (chatId) {
       try {
-        await bot['bot'].sendMessage(chatId, startMessage, { parse_mode: 'Markdown' });
+        await bot['safeSendMessage'](chatId, startMessage);
       } catch (error) {
         console.error('Error enviando mensaje de inicio:', error);
       }

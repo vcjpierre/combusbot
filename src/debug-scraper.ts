@@ -8,7 +8,7 @@ async function debugScraping(): Promise<void> {
   console.log('🔍 Iniciando análisis de debugging...');
   
   try {
-    const url = process.env.SCRAPER_URL || 'http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134';
+    const url = process.env.SCRAPER_URL || 'https://app9.biocloud.info/saldos/main/donde/134';
     
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

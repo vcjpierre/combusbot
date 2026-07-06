@@ -1,8 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api';
 import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
-import { scrapeWithFetch, extractDataFromHTML } from './scraper';
-import { ScrapedData, FuelStationData } from './types';
+import { scrapeUrl as scrapeWithFetch, extractDataFromHTML } from './scraper';
+import { ScrapedData, FuelStationData, escapeMarkdown } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -98,8 +98,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         ]
       };
       
-      this.bot.sendMessage(chatId, welcomeMessage, { 
-        parse_mode: 'Markdown',
+      this.safeSendMessage(chatId, welcomeMessage, { 
         reply_markup: menuKeyboard
       });
     });
@@ -112,13 +111,13 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
     // Comando /scrape
     this.bot.onText(/\/scrape/, async (msg) => {
       const chatId = msg.chat.id;
-      this.bot.sendMessage(chatId, '🔄 Ejecutando scraping manual...');
+      this.safeSendMessage(chatId, '🔄 Ejecutando scraping manual...');
       
       try {
         await this.executeScraping();
-        this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
+        this.safeSendMessage(chatId, '✅ Scraping completado exitosamente!');
       } catch (error) {
-        this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+            this.safeSendMessage(chatId, `❌ Error en scraping: ${escapeMarkdown(String(error))}`);
       }
     });
 
@@ -174,9 +173,9 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         case 'scrape':
           this.bot.answerCallbackQuery(query.id, { text: 'Ejecutando scraping...' });
           this.executeScraping().then(() => {
-            this.bot.sendMessage(chatId, '✅ Scraping completado exitosamente!');
+            this.safeSendMessage(chatId, '✅ Scraping completado exitosamente!');
           }).catch((error) => {
-            this.bot.sendMessage(chatId, `❌ Error en scraping: ${error}`);
+        this.safeSendMessage(chatId, `❌ Error en scraping: ${escapeMarkdown(String(error))}`);
           });
           break;
         case 'schedule':
@@ -361,7 +360,7 @@ El bot está configurado para enviar notificaciones automáticas. ¡Disfruta! �
         await this.executeScraping();
       } catch (error) {
         console.error('Error en scraping programado:', error);
-        this.bot.sendMessage(this.config.chatId, `❌ Error en scraping automático: ${error}`);
+        this.safeSendMessage(this.config.chatId, `❌ Error en scraping automático: ${escapeMarkdown(String(error))}`);
       }
     }, {
       scheduled: true,
@@ -410,8 +409,7 @@ Selecciona una opción:
       ]
     };
 
-    this.bot.sendMessage(chatId, menuMessage, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, menuMessage, {
       reply_markup: menuKeyboard
     });
   }
@@ -434,8 +432,7 @@ Selecciona una opción:
       ]
     };
     
-    this.bot.sendMessage(chatId, statusMessage, { 
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, statusMessage, { 
       reply_markup: menuKeyboard
     });
   }
@@ -462,8 +459,7 @@ Selecciona una opción:
     };
 
     try {
-      await this.bot.sendMessage(chatId, scheduleMessage, { 
-        parse_mode: 'Markdown',
+      await this.safeSendMessage(chatId, scheduleMessage, { 
         reply_markup: menuKeyboard
       });
     } catch (error) {
@@ -501,15 +497,14 @@ Selecciona una opción:
       ]
     };
     
-    this.bot.sendMessage(chatId, helpMessage, { 
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, helpMessage, { 
       reply_markup: menuKeyboard
     });
   }
 
   private handleStop(chatId: number): void {
     if (!this.isRunning) {
-      this.bot.sendMessage(chatId, '⚠️ El bot ya está detenido.');
+      this.safeSendMessage(chatId, '⚠️ El bot ya está detenido.');
       return;
     }
 
@@ -534,15 +529,14 @@ Usa /start_bot o el botón "Iniciar Bot" para reanudar.
       ]
     };
 
-    this.bot.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, message, {
       reply_markup: menuKeyboard
     });
   }
 
   private handleStart(chatId: number): void {
     if (this.isRunning) {
-      this.bot.sendMessage(chatId, '⚠️ El bot ya está en ejecución.');
+      this.safeSendMessage(chatId, '⚠️ El bot ya está en ejecución.');
       return;
     }
 
@@ -567,8 +561,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
       ]
     };
 
-    this.bot.sendMessage(chatId, message, {
-      parse_mode: 'Markdown',
+    this.safeSendMessage(chatId, message, {
       reply_markup: menuKeyboard
     });
   }
@@ -576,7 +569,8 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
   private async executeScraping(): Promise<void> {
     try {
       // Ejecutar scraping
-      const url = process.env.SCRAPER_URL || 'http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134';
+      const url = process.env.SCRAPER_URL || 'https://app9.biocloud.info/saldos/main/donde/134';
+      console.log(`🔍 Scraping URL: ${url}`);
       
       const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -600,7 +594,9 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
       }
       
       const html = await response.text();
+      console.log(`📄 HTML obtenido: ${html.length} bytes, btn-bio-app: ${html.includes('btn-bio-app')}`);
       const currentData = extractDataFromHTML(html);
+      console.log(`📊 Estaciones encontradas: ${currentData.estaciones.length}`);
       
       // Verificar si hay cambios significativos
       if (this.shouldNotify(currentData)) {
@@ -656,8 +652,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     const message = this.formatTelegramMessage(data);
     
     try {
-      await this.bot.sendMessage(this.config.chatId, message, { 
-        parse_mode: 'Markdown',
+      await this.safeSendMessage(this.config.chatId, message, { 
         disable_web_page_preview: true
       });
       console.log('📤 Notificación enviada exitosamente');
@@ -670,7 +665,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     const timestamp = new Date(data.timestamp).toLocaleString('es-ES');
     
     let message = `🚗 *Saldos de Combustible Biopetrol*\n`;
-    message += `🕐 ${data.ultima_medicion}\n`;
+    message += `🕐 ${escapeMarkdown(data.ultima_medicion)}\n`;
     message += `📅 ${timestamp}\n\n`;
     
     // Ordenar estaciones por volumen (mayor a menor)
@@ -680,12 +675,12 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
       const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : 
                          station.volumen_disponible > 1000 ? '🟡' : '🔴';
       
-      message += `${volumeEmoji} *${station.nombre_estacion}*\n`;
+      message += `${volumeEmoji} *${escapeMarkdown(station.nombre_estacion)}*\n`;
       message += `⛽ ${station.volumen_disponible.toLocaleString()} Lts.\n`;
       message += `⏱️ ${station.tiempo_espera_minutos} min. espera\n`;
       
       if (station.direccion !== 'Dirección no disponible') {
-        message += `📍 ${station.direccion}\n`;
+        message += `📍 ${escapeMarkdown(station.direccion)}\n`;
       }
       
       message += `\n`;
@@ -700,10 +695,22 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     message += `• Estaciones: ${data.estaciones.length}\n`;
     
     if (lowVolumeStations.length > 0) {
-      message += `⚠️ *Bajo inventario:* ${lowVolumeStations.map(s => s.nombre_estacion).join(', ')}\n`;
+      message += `⚠️ *Bajo inventario:* ${lowVolumeStations.map(s => escapeMarkdown(s.nombre_estacion)).join(', ')}\n`;
     }
     
     return message;
+  }
+
+  private async safeSendMessage(chatId: number | string, message: string, options: any = {}): Promise<void> {
+    try {
+      await this.bot.sendMessage(chatId, message, { ...options, parse_mode: 'Markdown' });
+    } catch (markdownError) {
+      try {
+        await this.bot.sendMessage(chatId, message, { ...options, parse_mode: undefined });
+      } catch (plainError) {
+        console.error('Error enviando mensaje:', plainError);
+      }
+    }
   }
 
   private async saveData(data: ScrapedData): Promise<void> {
@@ -775,7 +782,7 @@ Usa /help para ver todos los comandos disponibles.
     
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (chatId) {
-      bot['bot'].sendMessage(chatId, startMessage, { parse_mode: 'Markdown' });
+      bot['safeSendMessage'](chatId, startMessage);
     }
     
     // Manejar cierre graceful

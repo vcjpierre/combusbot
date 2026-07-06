@@ -1,34 +1,58 @@
-/**
- * Interfaces para los datos extraídos del scraper de combustible
- */
+import { z } from 'zod';
 
-export interface FuelStationData {
-  id: number;
-  un: number;
-  producto_id: number;
-  fecha: string;
-  saldo: string;
-  nombre_estacion: string;
-  volumen_disponible: number;
-  tiempo_espera_minutos: number;
-  direccion: string;
-  tipo_combustible: string;
-  tiempo_carga: number;
-  mangueras: number;
-  carga_promedio: number;
-  tiempo_carga_por_manguera: number;
+export const FuelStationDataSchema = z.object({
+  id: z.number().int(),
+  un: z.number().int(),
+  producto_id: z.number().int(),
+  fecha: z.string(),
+  saldo: z.string(),
+  nombre_estacion: z.string().min(1),
+  volumen_disponible: z.number().int().min(0),
+  tiempo_espera_minutos: z.number().min(0),
+  direccion: z.string(),
+  tipo_combustible: z.string(),
+  tiempo_carga: z.number().int(),
+  mangueras: z.number().int(),
+  carga_promedio: z.number().int(),
+  tiempo_carga_por_manguera: z.number(),
+});
+
+export const ScrapedDataSchema = z.object({
+  timestamp: z.string().datetime(),
+  ultima_medicion: z.string(),
+  tipo_combustible: z.string(),
+  estaciones: z.array(FuelStationDataSchema),
+});
+
+export type FuelStationData = z.infer<typeof FuelStationDataSchema>;
+export type ScrapedData = z.infer<typeof ScrapedDataSchema>;
+
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
-export interface ScrapedData {
-  timestamp: string;
-  ultima_medicion: string;
-  tipo_combustible: string;
-  estaciones: FuelStationData[];
-}
-
-export interface ScraperConfig {
-  url: string;
-  headless: boolean;
-  timeout: number;
-  waitForSelector: string;
+export function escapeMarkdown(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .replace(/~/g, '\\~')
+    .replace(/`/g, '\\`')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/>/g, '\\>')
+    .replace(/#/g, '\\#')
+    .replace(/\+/g, '\\+')
+    .replace(/-/g, '\\-')
+    .replace(/=/g, '\\=')
+    .replace(/\|/g, '\\|')
+    .replace(/\{/g, '\\{')
+    .replace(/\}/g, '\\}')
+    .replace(/\./g, '\\.')
+    .replace(/!/g, '\\!');
 }
