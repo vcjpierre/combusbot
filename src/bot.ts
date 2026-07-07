@@ -118,12 +118,12 @@ export class FuelBot {
     this.bot.onText(/\/iniciar/, async (msg) => {
       await this.unmuteUser(msg.chat.id);
       this.subscribeUser(msg.chat.id);
-      await this.safeSendMessage(msg.chat.id, '*Notificaciones activadas.* Recibirás alertas en este chat.');
+      await this.safeSendMessage(msg.chat.id, '✅ *Notificaciones activadas.* Recibirás alertas en este chat.');
     });
 
     this.bot.onText(/\/detener/, async (msg) => {
       await this.muteUser(msg.chat.id);
-      await this.safeSendMessage(msg.chat.id, '*Notificaciones desactivadas.* No recibirás alertas. Usa /iniciar para reactivar.');
+      await this.safeSendMessage(msg.chat.id, '🔕 *Notificaciones desactivadas.* No recibirás alertas. Usa /iniciar para reactivar.');
     });
 
     this.bot.onText(/\/estatus/, async (msg) => {
@@ -149,7 +149,7 @@ export class FuelBot {
 
     this.bot.onText(/\/stop/, async (msg) => {
       await this.muteUser(msg.chat.id);
-      await this.safeSendMessage(msg.chat.id, '*Notificaciones detenidas para este chat.*\nUsa /start para reactivar.');
+      await this.safeSendMessage(msg.chat.id, '🛑 *Notificaciones detenidas para este chat.*\nUsa /start para reactivar.');
     });
 
     this.bot.on('callback_query', async (query) => {
@@ -161,8 +161,8 @@ export class FuelBot {
       else if (cmd === 'cmd_ultima') await this.cmdUltima(chatId);
       else if (cmd === 'cmd_resumen') await this.cmdResumen(chatId);
       else if (cmd === 'cmd_start') { this.subscribeUser(chatId); await this.unmuteUser(chatId); this.cmdStart(chatId); }
-      else if (cmd === 'cmd_iniciar') { await this.unmuteUser(chatId); this.subscribeUser(chatId); await this.safeSendMessage(chatId, '*Notificaciones activadas.*'); }
-      else if (cmd === 'cmd_detener') { await this.muteUser(chatId); await this.safeSendMessage(chatId, '*Notificaciones desactivadas.*'); }
+      else if (cmd === 'cmd_iniciar') { await this.unmuteUser(chatId); this.subscribeUser(chatId); await this.safeSendMessage(chatId, '✅ *Notificaciones activadas.*'); }
+      else if (cmd === 'cmd_detener') { await this.muteUser(chatId); await this.safeSendMessage(chatId, '🔕 *Notificaciones desactivadas.*'); }
       else if (cmd === 'cmd_historial') await this.cmdHistorial(chatId);
 
       try { await this.bot.answerCallbackQuery(query.id); } catch { /* ignore */ }
@@ -171,24 +171,25 @@ export class FuelBot {
 
   private cmdStart(chatId: number): void {
     const muted = this.isMuted(chatId);
-    const statusLine = muted ? '\nEstado actual: *Detenido* (usa /iniciar para activar)' : '';
+    const statusLine = muted ? '\nEstado actual: *Detenido* ⏸️ (usa /iniciar para activar)' : '\nEstado actual: *Activo* ✅';
     this.safeSendMessage(
       chatId,
       [
-        '*CombustibleBot*',
+        '⛽ *CombustibleBot*',
         statusLine,
         '',
-        'Comandos disponibles:',
-        '• /estado - Estado actual de todas las estaciones',
-        '• /estacion <nombre> - Detalle de una estación con historial',
-        '• /ultima - Última medición',
-        '• /resumen - Resumen de las últimas 24h',
-        '• /iniciar - Activar notificaciones',
-        '• /detener - Desactivar notificaciones (solo para ti)',
-        '• /estatus - Estado del bot (horario, cron, uptime)',
-        '• /menu - Mostrar opciones rápidas',
-        '• /stop - Detener notificaciones (solo para ti)',
-        '• /start - Mostrar esta ayuda',
+        '📋 *Comandos disponibles:*',
+        '',
+        '📊 /estado - Estado actual de todas las estaciones',
+        '🔍 /estacion <nombre> - Detalle de una estación con historial',
+        '🕐 /ultima - Última medición',
+        '📈 /resumen - Resumen de las últimas 24h',
+        '🔔 /iniciar - Activar notificaciones',
+        '🔕 /detener - Desactivar notificaciones (solo para ti)',
+        '⚙️ /estatus - Estado del bot (horario, cron, uptime)',
+        '📑 /menu - Mostrar opciones rápidas',
+        '🛑 /stop - Detener notificaciones (solo para ti)',
+        '❓ /start - Mostrar esta ayuda',
       ].join('\n'),
     );
   }
@@ -197,20 +198,22 @@ export class FuelBot {
     try {
       const data = await scrapeUrl(getConfig().SCRAPER_URL);
       if (data.estaciones.length === 0) {
-        await this.safeSendMessage(chatId, '*Sin datos* No se encontraron estaciones con datos.');
+        await this.safeSendMessage(chatId, '⚠️ *Sin datos* No se encontraron estaciones con datos.');
         return;
       }
-      const header = `*${escapeMarkdown(data.tipo_combustible)}*\nMedición: ${escapeMarkdown(data.ultima_medicion)}`;
+      const header = `⛽ *${escapeMarkdown(data.tipo_combustible)}*\n📅 Medición: ${escapeMarkdown(data.ultima_medicion)}`;
       const sorted = [...data.estaciones].sort((a, b) => b.volumen_disponible - a.volumen_disponible);
-      const lines = sorted.map((s) => {
+      const lines = sorted.map((s, i) => {
         const meta = STATION_META[s.nombre_estacion];
         const idStr = meta ? ` (ID: ${meta.id})` : '';
-        return `• *${escapeMarkdown(s.nombre_estacion)}*${escapeMarkdown(idStr)}\n  Vol: ${s.volumen_disponible.toLocaleString()} Lts | Espera: ${s.tiempo_espera_minutos} min\n  Dir: ${escapeMarkdown(s.direccion)}`;
+        const volumeEmoji = s.volumen_disponible > 5000 ? '🟢' : s.volumen_disponible > 1000 ? '🟡' : '🔴';
+        const rank = `${i + 1}.`;
+        return `${rank} ${volumeEmoji} *${escapeMarkdown(s.nombre_estacion)}*${escapeMarkdown(idStr)}\n   ⛽ Vol: ${s.volumen_disponible.toLocaleString()} Lts | ⏱️ Espera: ${s.tiempo_espera_minutos} min\n   📍 Dir: ${escapeMarkdown(s.direccion)}`;
       });
       await this.safeSendMessage(chatId, `${header}\n\n${lines.join('\n\n')}`);
     } catch (err) {
       this.logger.error({ error: (err as Error).message }, 'Error fetching state');
-      await this.safeSendMessage(chatId, '*Error* No se pudieron obtener los datos. Intenta más tarde.');
+      await this.safeSendMessage(chatId, '❌ *Error* No se pudieron obtener los datos. Intenta más tarde.');
     }
   }
 
@@ -219,43 +222,46 @@ export class FuelBot {
       const data = await scrapeUrl(getConfig().SCRAPER_URL);
       const station = data.estaciones.find((s) => s.nombre_estacion.toUpperCase() === name);
       if (!station) {
-        await this.safeSendMessage(chatId, `*No encontrada* No se encontró la estación "${escapeMarkdown(name)}".`);
+        await this.safeSendMessage(chatId, `❌ *No encontrada* No se encontró la estación "${escapeMarkdown(name)}".`);
         return;
       }
       const meta = STATION_META[name];
       const idStr = meta ? ` (ID: ${meta.id})` : '';
+      const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : station.volumen_disponible > 1000 ? '🟡' : '🔴';
       const trend = getStationTrend(name, 24);
       let trendText = 'Sin historial aún.';
       if (trend.length > 1) {
         const first = trend[0].volumen_disponible;
         const last = trend[trend.length - 1].volumen_disponible;
         const pct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
-        const arrow = pct > 0 ? '+' : '';
-        trendText = `Tendencia 24h: ${arrow}${pct}% (${first.toLocaleString()} → ${last.toLocaleString()} Lts)`;
+        const arrow = pct > 0 ? '📈' : pct < 0 ? '📉' : '➡️';
+        const sign = pct > 0 ? '+' : '';
+        trendText = `${arrow} Tendencia 24h: ${sign}${pct}% (${first.toLocaleString()} → ${last.toLocaleString()} Lts)`;
       }
       await this.safeSendMessage(
         chatId,
         [
-          `*${escapeMarkdown(station.nombre_estacion)}*${escapeMarkdown(idStr)}`,
-          `Volumen: ${station.volumen_disponible.toLocaleString()} Lts`,
-          `Tiempo espera: ${station.tiempo_espera_minutos} min`,
-          `Dirección: ${escapeMarkdown(station.direccion)}`,
+          `${volumeEmoji} *${escapeMarkdown(station.nombre_estacion)}*${escapeMarkdown(idStr)}`,
+          '',
+          `⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts`,
+          `⏱️ Tiempo espera: ${station.tiempo_espera_minutos} min`,
+          `📍 Dirección: ${escapeMarkdown(station.direccion)}`,
           '',
           trendText,
         ].join('\n'),
       );
     } catch (err) {
       this.logger.error({ error: (err as Error).message }, 'Error fetching station');
-      await this.safeSendMessage(chatId, '*Error* No se pudieron obtener los datos.');
+      await this.safeSendMessage(chatId, '❌ *Error* No se pudieron obtener los datos.');
     }
   }
 
   private async cmdUltima(chatId: number): Promise<void> {
     try {
       const data = await scrapeUrl(getConfig().SCRAPER_URL);
-      await this.safeSendMessage(chatId, `*Última medición:* ${escapeMarkdown(data.ultima_medicion)}\nEstaciones: ${data.estaciones.length}`);
+      await this.safeSendMessage(chatId, `🕐 *Última medición:* ${escapeMarkdown(data.ultima_medicion)}\n📊 Estaciones: ${data.estaciones.length}`);
     } catch {
-      await this.safeSendMessage(chatId, '*Error* No se pudieron obtener los datos.');
+      await this.safeSendMessage(chatId, '❌ *Error* No se pudieron obtener los datos.');
     }
   }
 
@@ -268,21 +274,24 @@ export class FuelBot {
       const avgWait = total > 0 ? Math.round(data.estaciones.reduce((a, s) => a + s.tiempo_espera_minutos, 0) / total) : 0;
       const lowStock = data.estaciones.filter((s) => s.volumen_disponible < getConfig().MIN_VOLUME_THRESHOLD);
       const lines = [
-        '*Resumen 24h*',
+        '📈 *Resumen 24h*',
         '',
-        `Total estaciones: ${total}`,
-        `Con datos: ${withData}`,
-        `Volumen promedio: ${avgVol.toLocaleString()} Lts`,
-        `Tiempo espera promedio: ${avgWait} min`,
+        `🏢 Total estaciones: ${total}`,
+        `✅ Con datos: ${withData}`,
+        `⛽ Volumen promedio: ${avgVol.toLocaleString()} Lts`,
+        `⏱️ Tiempo espera promedio: ${avgWait} min`,
       ];
       if (lowStock.length > 0) {
-        lines.push('', `*Bajo stock (< ${getConfig().MIN_VOLUME_THRESHOLD} Lts):*`);
+        lines.push('', `⚠️ *Bajo stock (< ${getConfig().MIN_VOLUME_THRESHOLD} Lts):*`);
         const lowStockSorted = [...lowStock].sort((a, b) => a.volumen_disponible - b.volumen_disponible);
-        lowStockSorted.forEach((s) => lines.push(`• ${escapeMarkdown(s.nombre_estacion)}: ${s.volumen_disponible.toLocaleString()} Lts`));
+        lowStockSorted.forEach((s) => {
+          const emoji = s.volumen_disponible === 0 ? '🔴' : '🟡';
+          lines.push(`${emoji} ${escapeMarkdown(s.nombre_estacion)}: ${s.volumen_disponible.toLocaleString()} Lts`);
+        });
       }
       await this.safeSendMessage(chatId, lines.join('\n'));
     } catch {
-      await this.safeSendMessage(chatId, '*Error* No se pudieron obtener los datos.');
+      await this.safeSendMessage(chatId, '❌ *Error* No se pudieron obtener los datos.');
     }
   }
 
@@ -295,14 +304,14 @@ export class FuelBot {
     await this.safeSendMessage(
       chatId,
       [
-        '*Estado del bot*',
+        '⚙️ *Estado del bot*',
         '',
-        `Cron: ${config.CRON_SCHEDULE}`,
-        `Tus notificaciones: ${muted ? '*Desactivadas*' : '*Activadas*'}`,
-        `Solo cambios: ${config.NOTIFY_ONLY_CHANGES ? 'Sí' : 'No'}`,
-        `Vol. mínimo: ${config.MIN_VOLUME_THRESHOLD.toLocaleString()} Lts`,
-        `Uptime: ${h}h ${m}m`,
-        `Modo: ${config.NODE_ENV}`,
+        `🕐 Cron: ${config.CRON_SCHEDULE}`,
+        `🔔 Tus notificaciones: ${muted ? '*Desactivadas* 🔕' : '*Activadas* 🔔'}`,
+        `📝 Solo cambios: ${config.NOTIFY_ONLY_CHANGES ? 'Sí' : 'No'}`,
+        `⛽ Vol. mínimo: ${config.MIN_VOLUME_THRESHOLD.toLocaleString()} Lts`,
+        `⏱️ Uptime: ${h}h ${m}m`,
+        `🌐 Modo: ${config.NODE_ENV}`,
       ].join('\n'),
     );
   }
@@ -310,10 +319,10 @@ export class FuelBot {
   private async cmdHistorial(chatId: number): Promise<void> {
     const snapshots = getRecentSnapshots(5);
     if (snapshots.length === 0) {
-      await this.safeSendMessage(chatId, '*Historial* No hay datos guardados aún.');
+      await this.safeSendMessage(chatId, '📂 *Historial* No hay datos guardados aún.');
     } else {
-      const lines = snapshots.map((s) => `• ${escapeMarkdown(s.timestamp)} - ${s.station_count} estaciones`);
-      await this.safeSendMessage(chatId, `*Últimos snapshots:*\n\n${lines.join('\n')}`);
+      const lines = snapshots.map((s) => `📅 ${escapeMarkdown(s.timestamp)} - 🏢 ${s.station_count} estaciones`);
+      await this.safeSendMessage(chatId, `📋 *Últimos snapshots:*\n\n${lines.join('\n')}`);
     }
   }
 
@@ -364,25 +373,26 @@ export class FuelBot {
       const lines = sortedNotify.map((name) => {
         const station = newStationMap.get(name)!;
         const trend = getStationTrend(name, 24);
+        const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : station.volumen_disponible > 1000 ? '🟡' : '🔴';
         let trendText = '';
         if (trend.length > 1) {
           const first = trend[0].volumen_disponible;
           const last = trend[trend.length - 1].volumen_disponible;
           const pct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
-          const arrow = pct > 0 ? '+' : '';
-          trendText = ` (Tendencia: ${arrow}${pct}%)`;
+          const sign = pct > 0 ? '+' : '';
+          trendText = ` (Tendencia: ${sign}${pct}%)`;
         }
         const meta = STATION_META[name];
         const idStr = meta ? ` (ID: ${meta.id})` : '';
         return [
-          `*${escapeMarkdown(name)}*${escapeMarkdown(idStr)}`,
-          `Volumen: ${station.volumen_disponible.toLocaleString()} Lts${escapeMarkdown(trendText)}`,
-          `Tiempo espera: ${station.tiempo_espera_minutos} min`,
-          `Dirección: ${escapeMarkdown(station.direccion)}`,
+          `${volumeEmoji} *${escapeMarkdown(name)}*${escapeMarkdown(idStr)}`,
+          `⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts${escapeMarkdown(trendText)}`,
+          `⏱️ Tiempo espera: ${station.tiempo_espera_minutos} min`,
+          `📍 Dirección: ${escapeMarkdown(station.direccion)}`,
         ].join('\n');
       });
 
-      const header = `*${escapeMarkdown(data.tipo_combustible)}*\nMedición: ${escapeMarkdown(data.ultima_medicion)}\n`;
+      const header = `⛽ *${escapeMarkdown(data.tipo_combustible)}*\n📅 Medición: ${escapeMarkdown(data.ultima_medicion)}\n`;
       const fullMsg = `${header}\n${lines.join('\n\n')}`;
 
       const chatIds = this.subscribedUsers.size > 0
@@ -430,7 +440,7 @@ export class FuelBot {
     try {
       await this.safeSendMessage(
         Number(config.TELEGRAM_CHAT_ID),
-        '*CombustibleBot iniciado*\nEscribe /start para ver los comandos.',
+        '🚀 *CombustibleBot iniciado*\nEscribe /start para ver los comandos.',
       );
       this.subscribeUser(Number(config.TELEGRAM_CHAT_ID));
     } catch (err) {
