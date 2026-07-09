@@ -4,7 +4,7 @@ import { getConfig, STATION_META } from './config';
 import { escapeMarkdown } from './types';
 import { writeJsonAsync } from './utils';
 import { scrapeUrl, saveToFile } from './scraper';
-import { saveSnapshot, getStationTrend, getRecentSnapshots, closeDb } from './history';
+import { saveSnapshot, getRecentSnapshots, closeDb } from './history';
 import { getLogger } from './logger';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
@@ -228,16 +228,6 @@ export class FuelBot {
       const meta = STATION_META[name];
       const idStr = meta ? ` (ID: ${meta.id})` : '';
       const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : station.volumen_disponible > 1000 ? '🟡' : '🔴';
-      const trend = getStationTrend(name, 24);
-      let trendText = 'Sin historial aún.';
-      if (trend.length > 1) {
-        const first = trend[0].volumen_disponible;
-        const last = trend[trend.length - 1].volumen_disponible;
-        const pct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
-        const arrow = pct > 0 ? '📈' : pct < 0 ? '📉' : '➡️';
-        const sign = pct > 0 ? '+' : '';
-        trendText = `${arrow} Tendencia 24h: ${sign}${pct}% (${first.toLocaleString()} → ${last.toLocaleString()} Lts)`;
-      }
       await this.safeSendMessage(
         chatId,
         [
@@ -246,8 +236,6 @@ export class FuelBot {
           `⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts`,
           `⏱️ Tiempo espera: ${station.tiempo_espera_minutos} min`,
           `📍 Dirección: ${escapeMarkdown(station.direccion)}`,
-          '',
-          trendText,
         ].join('\n'),
       );
     } catch (err) {
@@ -372,21 +360,12 @@ export class FuelBot {
       });
       const lines = sortedNotify.map((name) => {
         const station = newStationMap.get(name)!;
-        const trend = getStationTrend(name, 24);
         const volumeEmoji = station.volumen_disponible > 5000 ? '🟢' : station.volumen_disponible > 1000 ? '🟡' : '🔴';
-        let trendText = '';
-        if (trend.length > 1) {
-          const first = trend[0].volumen_disponible;
-          const last = trend[trend.length - 1].volumen_disponible;
-          const pct = first > 0 ? Math.round(((last - first) / first) * 100) : 0;
-          const sign = pct > 0 ? '+' : '';
-          trendText = ` (Tendencia: ${sign}${pct}%)`;
-        }
         const meta = STATION_META[name];
         const idStr = meta ? ` (ID: ${meta.id})` : '';
         return [
           `${volumeEmoji} *${escapeMarkdown(name)}*${escapeMarkdown(idStr)}`,
-          `⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts${escapeMarkdown(trendText)}`,
+          `⛽ Volumen: ${station.volumen_disponible.toLocaleString()} Lts`,
           `⏱️ Tiempo espera: ${station.tiempo_espera_minutos} min`,
           `📍 Dirección: ${escapeMarkdown(station.direccion)}`,
         ].join('\n');
