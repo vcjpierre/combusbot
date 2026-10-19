@@ -3,6 +3,7 @@ import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
 import { load } from 'cheerio';
 import { ScrapedData, FuelStationData, escapeMarkdown } from './types';
+import { DEFAULT_SCRAPER_URL } from './config';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -557,7 +558,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
     
     try {
       // Ejecutar scraping
-      const url = process.env.SCRAPER_URL || 'https://app9.biocloud.info/saldos/main/donde/134';
+      const url = process.env.SCRAPER_URL || DEFAULT_SCRAPER_URL;
       
       const headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

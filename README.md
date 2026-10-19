@@ -145,7 +145,7 @@ TELEGRAM_BOT_TOKEN=tu_bot_token_aqui
 TELEGRAM_CHAT_ID=tu_chat_id_aqui
 
 # Configuración del Scraper
-SCRAPER_URL=http://ec2-3-22-240-207.us-east-2.compute.amazonaws.com/guiasaldos/main/donde/134
+SCRAPER_URL=https://app9.biocloud.info/saldos/main/donde/G
 CRON_SCHEDULE=0 * * * *
 
 # Configuración de Notificaciones

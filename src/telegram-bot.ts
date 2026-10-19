@@ -3,6 +3,7 @@ import * as cron from 'node-cron';
 import * as dotenv from 'dotenv';
 import { scrapeUrl as scrapeWithFetch, extractDataFromHTML } from './scraper';
 import { ScrapedData, FuelStationData, escapeMarkdown } from './types';
+import { DEFAULT_SCRAPER_URL } from './config';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -569,7 +570,7 @@ Usa /stop o el botón "Detener Bot" para detener el bot nuevamente.
   private async executeScraping(): Promise<void> {
     try {
       // Ejecutar scraping
-      const url = process.env.SCRAPER_URL || 'https://app9.biocloud.info/saldos/main/donde/134';
+      const url = process.env.SCRAPER_URL || DEFAULT_SCRAPER_URL;
       console.log(`🔍 Scraping URL: ${url}`);
       
       const headers = {

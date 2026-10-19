@@ -3,10 +3,16 @@ import { z } from 'zod';
 
 dotenv.config();
 
+// Biopetrol retired the numeric product ids (e.g. /donde/134, which now returns an
+// empty results page) and selects the product by fuel-type code instead:
+// G = Gasolina, D = Diesel, GU = Gasolina Ultra 91, DI = Diesel Ultra.
+// This bot tracks Gasolina only.
+export const DEFAULT_SCRAPER_URL = 'https://app9.biocloud.info/saldos/main/donde/G';
+
 const EnvSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1, 'TELEGRAM_BOT_TOKEN is required'),
   TELEGRAM_CHAT_ID: z.string().min(1, 'TELEGRAM_CHAT_ID is required'),
-  SCRAPER_URL: z.string().url().default('https://app9.biocloud.info/saldos/main/donde/134'),
+  SCRAPER_URL: z.string().url().default(DEFAULT_SCRAPER_URL),
   CRON_SCHEDULE: z.string().default('0 * * * *'),
   NOTIFY_ONLY_CHANGES: z.coerce.boolean().default(false),
   MIN_VOLUME_THRESHOLD: z.coerce.number().int().default(1000),
