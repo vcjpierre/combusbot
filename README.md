@@ -76,6 +76,15 @@ Una vez que el bot esté ejecutándose, puedes usar estos comandos en Telegram:
 - `/schedule` - Ver configuración del scheduler
 - `/help` - Mostrar ayuda
 
+## 🚨 Alertas de Salud
+
+Si el scraper no puede traer datos, el bot avisa al chat configurado en `TELEGRAM_CHAT_ID`:
+
+- **Sin datos:** el scraping respondió bien pero devolvió 0 estaciones (por ejemplo, si el sitio cambia la URL).
+- **Error:** el scraping falló directamente (red o HTTP no-OK).
+
+La alerta se envía **una sola vez por caída**, no en cada ejecución del cron. Cuando el scraping vuelve a devolver estaciones, llega un único mensaje de recuperación. Estas alertas no respetan el mute (`/stop`), porque un bot caído no es spam: es justo lo que hay que saber.
+
 ## 📊 Datos Extraídos
 
 El scraper extrae la siguiente información de cada estación:

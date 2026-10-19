@@ -1,7 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api';
 import * as cron from 'node-cron';
 import { getConfig, STATION_META } from './config';
-import { escapeMarkdown } from './types';
+import { escapeMarkdown, ScrapedData } from './types';
+import { ScrapeWatchdog } from './scrape-watchdog';
 import { writeJsonAsync } from './utils';
 import { scrapeUrl, saveToFile } from './scraper';
 import { saveSnapshot, getRecentSnapshots, closeDb } from './history';
@@ -30,11 +31,13 @@ export class FuelBot {
   private started = false;
   private mutedUsers = new Set<number>();
   private subscribedUsers = new Set<number>();
+  private readonly watchdog: ScrapeWatchdog;
 
   constructor() {
     const config = getConfig();
     this.bot = new TelegramBot(config.TELEGRAM_BOT_TOKEN, { polling: true });
     this.logger = getLogger();
+    this.watchdog = new ScrapeWatchdog(config.SCRAPER_URL);
     this.registerCommands();
   }
 
@@ -317,18 +320,30 @@ export class FuelBot {
   async sendNotifications(): Promise<void> {
     const config = getConfig();
     this.logger.info('Sending notifications');
+
+    let data: ScrapedData;
     try {
-      const data = await scrapeUrl(config.SCRAPER_URL);
+      data = await scrapeUrl(config.SCRAPER_URL);
       await saveToFile(data);
 
       const snapshotId = saveSnapshot(data);
       this.logger.debug({ snapshotId }, 'Snapshot saved');
+    } catch (err) {
+      const reason = (err as Error).message;
+      this.logger.error({ error: reason }, 'Scrape failed');
+      await this.alertOperator(this.watchdog.registerFailure(reason));
+      return;
+    }
 
-      if (data.estaciones.length === 0) {
-        this.logger.warn('No stations found');
-        return;
-      }
+    if (data.estaciones.length === 0) {
+      this.logger.warn('No stations found');
+      await this.alertOperator(this.watchdog.registerFailure('la página no devolvió estaciones'));
+      return;
+    }
 
+    await this.alertOperator(this.watchdog.registerSuccess());
+
+    try {
       const newStationMap = new Map<string, ScrapedStation>();
       data.estaciones.forEach((s) => newStationMap.set(s.nombre_estacion, s));
 
@@ -388,6 +403,18 @@ export class FuelBot {
     } catch (err) {
       this.logger.error({ error: (err as Error).message }, 'Error sending notifications');
     }
+  }
+
+  /**
+   * Sends a scrape health alert to the operator chat. Deliberately ignores the
+   * per-chat mute list: a broken bot is not spam, it is the thing the operator
+   * must know about, and it fires at most once per outage episode.
+   */
+  private async alertOperator(alert: string | null): Promise<void> {
+    if (!alert) return;
+    const chatId = Number(getConfig().TELEGRAM_CHAT_ID);
+    this.logger.error({ chatId }, 'Scrape health alert sent to operator');
+    await this.safeSendMessage(chatId, alert);
   }
 
   startCron(): void {
